@@ -145,11 +145,14 @@ def get_transcript():
 
         proxy_user = os.environ.get('WEBSHARE_PROXY_USERNAME')
         proxy_pass = os.environ.get('WEBSHARE_PROXY_PASSWORD')
-        if proxy_user and proxy_pass:
-            from youtube_transcript_api.proxies import WebshareProxyConfig
-            api = YouTubeTranscriptApi(proxy_config=WebshareProxyConfig(
-                proxy_username=proxy_user,
-                proxy_password=proxy_pass,
+        proxy_host = os.environ.get('WEBSHARE_PROXY_HOST')
+        proxy_port = os.environ.get('WEBSHARE_PROXY_PORT')
+        if proxy_user and proxy_pass and proxy_host and proxy_port:
+            from youtube_transcript_api.proxies import GenericProxyConfig
+            proxy_url = f"http://{proxy_user}:{proxy_pass}@{proxy_host}:{proxy_port}"
+            api = YouTubeTranscriptApi(proxy_config=GenericProxyConfig(
+                http_url=proxy_url,
+                https_url=proxy_url,
             ))
         else:
             api = YouTubeTranscriptApi()
