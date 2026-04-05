@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>英语跟读练习</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<div class="app">
+
+  <!-- ── 顶部输入栏 ── -->
+  <div class="topbar">
+    <input id="videoUrl" class="url-input" type="text"
+           placeholder="粘贴 YouTube 视频链接，按回车或点加载…" />
+    <button id="loadBtn" class="load-btn">加载</button>
+  </div>
+
+  <!-- ── 视频区 ── -->
+  <!-- ── 主内容区（视频左 2 / 句子右 1） ── -->
+  <div class="main-layout">
+
+    <!-- 左：视频 + 加载中 -->
+    <div class="left-col">
+      <div id="videoSection" class="video-section hidden">
+        <div id="player"></div>
+      </div>
+      <div id="loadingState" class="loading hidden">
+        <div class="spinner"></div>
+        <p>正在获取字幕并翻译，请稍候…</p>
+      </div>
+    </div>
+
+    <!-- 右：标签栏 + 句子面板 -->
+    <div class="right-col">
+
+  <!-- ── 标签栏 ── -->
+  <div id="tabBar" class="tab-bar hidden">
+    <button class="tab active" data-tab="subtitles">
+      <svg viewBox="0 0 24 24"><text y="18" font-size="14">文A</text></svg>
+      <span>字幕</span>
+    </button>
+    <button class="tab" data-tab="speed">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/>
+      </svg>
+      <span>倍速</span>
+    </button>
+    <button class="tab" data-tab="flashcard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="5" width="18" height="14" rx="2"/>
+        <line x1="3" y1="10" x2="21" y2="10"/>
+      </svg>
+      <span>闪卡</span>
+    </button>
+    <button class="tab" data-tab="favorites">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+      </svg>
+      <span>收藏</span>
+    </button>
+    <button class="tab" data-tab="practice">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/>
+        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+      </svg>
+      <span>练习</span>
+    </button>
+  </div>
+
+  <!-- ── 字幕面板 ── -->
+  <div id="subtitlesPanel" class="subtitles-panel">
+    <div id="sentencesList" class="sentences-list">
+      <!-- 初始空状态 -->
+      <div class="empty-state">
+        <div class="empty-icon">🎬</div>
+        <p>输入 YouTube 链接，开始英语跟读练习</p>
+        <p class="hint">支持自动获取字幕 · 中英双语 · 跟读评分</p>
+      </div>
+    </div>
+  </div>
+
+    </div><!-- /.right-col -->
+  </div><!-- /.main-layout -->
+
+  <!-- ── 跟读弹窗 ── -->
+  <div id="shadowModal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>跟读练习</h3>
+        <button id="closeModal" class="close-btn" aria-label="关闭">✕</button>
+      </div>
+
+      <div id="modalEnglish" class="modal-english"></div>
+      <div id="modalChinese" class="modal-chinese"></div>
+
+      <div class="modal-actions">
+        <button id="listenAgainBtn" class="btn-listen">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
+          听原音
+        </button>
+        <button id="recordBtn" class="btn-record">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 15c1.66 0 2.99-1.34 2.99-3L15 6c0-1.66-1.34-3-3-3S9 4.34 9 6v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 15 6.7 12H5c0 3.42 2.72 6.23 6 6.72V22h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg>
+          开始跟读
+        </button>
+      </div>
+
+      <div id="recordStatus" class="record-status"></div>
+
+      <div id="resultBox" class="result-box hidden">
+        <div id="scoreText" class="score-text"></div>
+        <div id="wordComp" class="word-comp"></div>
+        <div id="userSaid" class="user-said"></div>
+        <button id="retryBtn" class="btn-retry">再试一次</button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- .app -->
+
+<script src="https://www.youtube.com/iframe_api"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
