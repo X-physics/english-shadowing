@@ -143,7 +143,16 @@ def get_transcript():
         from youtube_transcript_api import YouTubeTranscriptApi
         from youtube_transcript_api._errors import NoTranscriptFound, TranscriptsDisabled
 
-        api = YouTubeTranscriptApi()
+        proxy_user = os.environ.get('WEBSHARE_PROXY_USERNAME')
+        proxy_pass = os.environ.get('WEBSHARE_PROXY_PASSWORD')
+        if proxy_user and proxy_pass:
+            from youtube_transcript_api.proxies import WebshareProxyConfig
+            api = YouTubeTranscriptApi(proxy_config=WebshareProxyConfig(
+                proxy_username=proxy_user,
+                proxy_password=proxy_pass,
+            ))
+        else:
+            api = YouTubeTranscriptApi()
         raw = None
         try:
             raw = api.fetch(video_id, languages=['en', 'en-US', 'en-GB'])
