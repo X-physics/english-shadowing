@@ -2,3 +2,4 @@ flask
 gunicorn
 youtube-transcript-api
 deep-translator
+requests

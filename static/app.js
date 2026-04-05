@@ -1,5 +1,7 @@
 /* ── State ── */
-let player = null;
+let player = null;          // YouTube player instance
+let platform = 'youtube';   // 'youtube' | 'bilibili'
+let bilibiliVideoId = '';   // current BV number
 let transcript = [];
 let currentIndex = -1;
 let syncTimer = null;
@@ -24,8 +26,10 @@ function esc(str) {
 /* ── YouTube IFrame API ── */
 window.onYouTubeIframeAPIReady = function () {};
 
-function initPlayer(videoId) {
+function initYouTubePlayer(videoId) {
   if (player) { player.destroy(); player = null; }
+  document.getElementById('player').style.display = '';
+  document.getElementById('bilibiliPlayer').style.display = 'none';
 
   player = new YT.Player('player', {
     videoId,
@@ -40,6 +44,20 @@ function initPlayer(videoId) {
   });
 }
 
+function initBilibiliPlayer(bvid) {
+  bilibiliVideoId = bvid;
+  document.getElementById('player').style.display = 'none';
+  const iframe = document.getElementById('bilibiliPlayer');
+  iframe.style.display = '';
+  iframe.src = bilibiliEmbedUrl(bvid, 0, false);
+  // Bilibili can't push state changes, so we rely on manual sync
+  startSync();
+}
+
+function bilibiliEmbedUrl(bvid, t, autoplay) {
+  return `https://player.bilibili.com/player.html?bvid=${bvid}&page=1&t=${Math.floor(t)}&autoplay=${autoplay ? 1 : 0}&danmaku=0&high_quality=1`;
+}
+
 function startSync() {
   stopSync();
   syncTimer = setInterval(syncNow, 250);
@@ -50,6 +68,10 @@ function stopSync() {
 }
 
 function syncNow() {
+  if (platform === 'bilibili') {
+    // Bilibili can't expose currentTime to cross-origin JS; skip highlight sync
+    return;
+  }
   if (!player || !player.getCurrentTime) return;
   const t = player.getCurrentTime();
   let idx = -1;
@@ -84,12 +106,11 @@ async function loadVideo() {
   const url = document.getElementById('videoUrl').value.trim();
   if (!url) return;
 
-  const loadBtn   = document.getElementById('loadBtn');
-  const loading   = document.getElementById('loadingState');
-  const vidSec    = document.getElementById('videoSection');
-  const tabBar    = document.getElementById('tabBar');
-  const panel     = document.getElementById('subtitlesPanel');
-  const list      = document.getElementById('sentencesList');
+  const loadBtn = document.getElementById('loadBtn');
+  const loading = document.getElementById('loadingState');
+  const vidSec  = document.getElementById('videoSection');
+  const tabBar  = document.getElementById('tabBar');
+  const list    = document.getElementById('sentencesList');
 
   loadBtn.disabled = true;
   loadBtn.textContent = '加载中…';
@@ -105,9 +126,14 @@ async function loadVideo() {
     if (data.error) { showError(data.error, list); return; }
 
     transcript = data.transcript;
+    platform   = data.platform || 'youtube';
 
     vidSec.classList.remove('hidden');
-    initPlayer(data.video_id);
+    if (platform === 'bilibili') {
+      initBilibiliPlayer(data.video_id);
+    } else {
+      initYouTubePlayer(data.video_id);
+    }
     renderCards(list);
     tabBar.classList.remove('hidden');
 
@@ -182,6 +208,28 @@ function clearSegmentTimer() {
  */
 function seekAndPlay(start, duration) {
   clearSegmentTimer();
+
+  if (platform === 'bilibili') {
+    // Reload iframe with new timestamp + autoplay
+    const iframe = document.getElementById('bilibiliPlayer');
+    iframe.src = bilibiliEmbedUrl(bilibiliVideoId, start, true);
+    // Bilibili can't be paused via JS cross-origin reliably;
+    // show a visual overlay after the sentence duration instead.
+    if (duration > 0) {
+      segmentTimer = setTimeout(() => {
+        // Try postMessage pause (works on some player versions)
+        try {
+          iframe.contentWindow.postMessage(
+            JSON.stringify({ type: 'pause' }), '*'
+          );
+        } catch (_) {}
+        segmentTimer = null;
+      }, (duration + 0.3) * 1000);
+    }
+    return;
+  }
+
+  // YouTube
   if (!player || !player.seekTo) return;
   player.seekTo(start, true);
   player.playVideo();
@@ -300,7 +348,14 @@ function toggleRecord() {
 
   // Pause video so it doesn't feed into the mic
   clearSegmentTimer();
-  if (player && player.pauseVideo) player.pauseVideo();
+  if (platform === 'bilibili') {
+    try {
+      const iframe = document.getElementById('bilibiliPlayer');
+      iframe.contentWindow.postMessage(JSON.stringify({ type: 'pause' }), '*');
+    } catch (_) {}
+  } else if (player && player.pauseVideo) {
+    player.pauseVideo();
+  }
 
   // 3-second countdown
   let count = 3;

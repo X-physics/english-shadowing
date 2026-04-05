@@ -12,7 +12,7 @@
   <!-- ── 顶部输入栏 ── -->
   <div class="topbar">
     <input id="videoUrl" class="url-input" type="text"
-           placeholder="粘贴 YouTube 视频链接，按回车或点加载…" />
+           placeholder="粘贴 YouTube 或 Bilibili 视频链接，按回车或点加载…" />
     <button id="loadBtn" class="load-btn">加载</button>
   </div>
 
@@ -23,7 +23,16 @@
     <!-- 左：视频 + 加载中 -->
     <div class="left-col">
       <div id="videoSection" class="video-section hidden">
+        <!-- YouTube player -->
         <div id="player"></div>
+        <!-- Bilibili player -->
+        <iframe id="bilibiliPlayer"
+          src=""
+          scrolling="no"
+          frameborder="0"
+          allowfullscreen="true"
+          style="display:none;width:100%;height:100%;border:none;"
+        ></iframe>
       </div>
       <div id="loadingState" class="loading hidden">
         <div class="spinner"></div>
@@ -74,8 +83,8 @@
       <!-- 初始空状态 -->
       <div class="empty-state">
         <div class="empty-icon">🎬</div>
-        <p>输入 YouTube 链接，开始英语跟读练习</p>
-        <p class="hint">支持自动获取字幕 · 中英双语 · 跟读评分</p>
+        <p>输入 YouTube 或 Bilibili 链接，开始跟读练习</p>
+        <p class="hint">自动获取字幕 · 中英双语 · 跟读评分</p>
       </div>
     </div>
   </div>
