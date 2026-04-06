@@ -1,3 +1,102 @@
+/* ── Video Favorites ── */
+let currentVideoMeta = null;   // { url, title, platform, video_id }
+
+function loadFavs() {
+  try { return JSON.parse(localStorage.getItem('videoFavorites') || '[]'); }
+  catch { return []; }
+}
+
+function saveFavs(favs) {
+  localStorage.setItem('videoFavorites', JSON.stringify(favs));
+}
+
+function isFaved(url) {
+  return loadFavs().some(f => f.url === url);
+}
+
+function syncFavBtn() {
+  const btn = document.getElementById('favBtn');
+  if (!btn || !currentVideoMeta) return;
+  const faved = isFaved(currentVideoMeta.url);
+  btn.textContent = faved ? '♥' : '♡';
+  btn.classList.toggle('faved', faved);
+  btn.title = faved ? '取消收藏' : '收藏此视频';
+}
+
+function toggleFav() {
+  if (!currentVideoMeta) return;
+  let favs = loadFavs();
+  const idx = favs.findIndex(f => f.url === currentVideoMeta.url);
+  if (idx >= 0) {
+    favs.splice(idx, 1);
+  } else {
+    favs.unshift(currentVideoMeta);   // newest first
+  }
+  saveFavs(favs);
+  syncFavBtn();
+  renderFavPanel();
+}
+
+function renderFavPanel() {
+  const list = document.getElementById('favList');
+  if (!list) return;
+  const favs = loadFavs();
+  if (!favs.length) {
+    list.innerHTML = '<div class="fav-empty">还没有收藏的视频，看完觉得好的点 ♡ 收藏吧～</div>';
+    return;
+  }
+  list.innerHTML = favs.map((v, i) => `
+    <div class="featured-card" data-fav-idx="${i}" title="${esc(v.title)}">
+      <img class="featured-thumb" src="${ytThumb(v.url)}" alt="${esc(v.title)}" loading="lazy"
+           onerror="this.style.background='#eee';this.style.height='60px'" />
+      <button class="fav-remove-btn" data-remove-idx="${i}" title="移除收藏">✕</button>
+      <div class="featured-info">
+        <div class="featured-card-title">${esc(v.title)}</div>
+        <div class="featured-card-tag">${v.platform === 'bilibili' ? 'Bilibili' : 'YouTube'}</div>
+      </div>
+    </div>
+  `).join('');
+
+  list.addEventListener('click', e => {
+    // Remove button
+    const removeBtn = e.target.closest('.fav-remove-btn');
+    if (removeBtn) {
+      e.stopPropagation();
+      let favs = loadFavs();
+      favs.splice(+removeBtn.dataset.removeIdx, 1);
+      saveFavs(favs);
+      syncFavBtn();
+      renderFavPanel();
+      return;
+    }
+    // Click card → load
+    const card = e.target.closest('.featured-card[data-fav-idx]');
+    if (!card) return;
+    const v = loadFavs()[+card.dataset.favIdx];
+    if (!v) return;
+    document.getElementById('videoUrl').value = v.url;
+    hideFavPanel();
+    loadVideo();
+  });
+}
+
+function showFavPanel() {
+  renderFavPanel();
+  document.getElementById('favPanel').classList.remove('hidden');
+  setTimeout(updateFeaturedHeight, 50);
+}
+
+function hideFavPanel() {
+  document.getElementById('favPanel').classList.add('hidden');
+  setTimeout(updateFeaturedHeight, 50);
+}
+
+function toggleFavPanel() {
+  const panel = document.getElementById('favPanel');
+  if (panel.classList.contains('hidden')) showFavPanel();
+  else hideFavPanel();
+}
+
 /* ── Featured Videos ── */
 const FEATURED_VIDEOS = [
   {
@@ -204,6 +303,16 @@ async function loadVideo() {
 
     transcript = data.transcript;
     platform   = data.platform || 'youtube';
+
+    // Save current video meta for the favorite button
+    currentVideoMeta = {
+      url:      url,
+      title:    data.title || data.video_id,
+      platform: data.platform || 'youtube',
+      video_id: data.video_id,
+    };
+    document.getElementById('favBtn').classList.remove('hidden');
+    syncFavBtn();
 
     // Auto-collapse featured section to give video more room
     const featSec = document.getElementById('featuredSection');
@@ -657,6 +766,11 @@ document.addEventListener('DOMContentLoaded', () => {
   updateFeaturedHeight();
   window.addEventListener('resize', updateFeaturedHeight);
   document.getElementById('featuredToggle')?.addEventListener('click', toggleFeatured);
+
+  // Favorites
+  document.getElementById('favBtn').addEventListener('click', toggleFav);
+  document.getElementById('favPanelBtn').addEventListener('click', toggleFavPanel);
+  document.getElementById('favPanelClose').addEventListener('click', hideFavPanel);
 
   // Load button
   document.getElementById('loadBtn').addEventListener('click', loadVideo);

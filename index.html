@@ -14,6 +14,19 @@
     <input id="videoUrl" class="url-input" type="text"
            placeholder="粘贴 YouTube 或 Bilibili 视频链接，按回车或点加载…" />
     <button id="loadBtn" class="load-btn">加载</button>
+    <button id="favBtn" class="fav-btn hidden" title="收藏此视频">♡</button>
+    <button id="favPanelBtn" class="fav-panel-btn" title="我的收藏">📚</button>
+  </div>
+
+  <!-- ── 我的收藏面板 ── -->
+  <div id="favPanel" class="fav-panel hidden">
+    <div class="featured-header">
+      <span class="featured-title">❤️ 我的收藏</span>
+      <button id="favPanelClose" class="featured-toggle">✕</button>
+    </div>
+    <div id="favList" class="featured-list">
+      <div class="fav-empty">还没有收藏的视频，看完觉得好的点 ♡ 收藏吧～</div>
+    </div>
   </div>
 
   <!-- ── 精选视频 ── -->

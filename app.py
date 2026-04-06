@@ -188,7 +188,21 @@ def get_bilibili_transcript(bvid):
         }
         for item in body
     ]
-    return segments, source_lang
+    title = info['data'].get('title', bvid)
+    return segments, source_lang, title
+
+
+def get_youtube_title(video_id):
+    """Fetch YouTube video title via oEmbed (no API key required)."""
+    try:
+        import requests as req
+        resp = req.get(
+            f'https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json',
+            timeout=5
+        )
+        return resp.json().get('title', video_id)
+    except Exception:
+        return video_id
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -208,7 +222,7 @@ def get_transcript():
     bvid = extract_bilibili_id(url)
     if bvid:
         try:
-            segments, source_lang = get_bilibili_transcript(bvid)
+            segments, source_lang, video_title = get_bilibili_transcript(bvid)
             merged = merge_segments(segments)
             if not merged:
                 return jsonify({'error': '字幕内容为空'}), 400
@@ -236,6 +250,7 @@ def get_transcript():
             return jsonify({
                 'platform': 'bilibili',
                 'video_id': bvid,
+                'title': video_title,
                 'source_lang': source_lang,
                 'transcript': result,
             })
@@ -294,6 +309,7 @@ def get_transcript():
         return jsonify({
             'platform': 'youtube',
             'video_id': video_id,
+            'title': get_youtube_title(video_id),
             'source_lang': 'en',
             'transcript': result,
         })
