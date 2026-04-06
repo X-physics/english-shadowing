@@ -1,18 +1,12 @@
-/* ── Video Favorites ── */
-let currentVideoMeta = null;   // { url, title, platform, video_id }
+/* ── Video Favorites (localStorage) ── */
+let currentVideoMeta = null;
 
 function loadFavs() {
   try { return JSON.parse(localStorage.getItem('videoFavorites') || '[]'); }
   catch { return []; }
 }
-
-function saveFavs(favs) {
-  localStorage.setItem('videoFavorites', JSON.stringify(favs));
-}
-
-function isFaved(url) {
-  return loadFavs().some(f => f.url === url);
-}
+function saveFavs(favs) { localStorage.setItem('videoFavorites', JSON.stringify(favs)); }
+function isFaved(url) { return loadFavs().some(f => f.url === url); }
 
 function syncFavBtn() {
   const btn = document.getElementById('favBtn');
@@ -27,103 +21,53 @@ function toggleFav() {
   if (!currentVideoMeta) return;
   let favs = loadFavs();
   const idx = favs.findIndex(f => f.url === currentVideoMeta.url);
-  if (idx >= 0) {
-    favs.splice(idx, 1);
-  } else {
-    favs.unshift(currentVideoMeta);   // newest first
-  }
+  if (idx >= 0) favs.splice(idx, 1);
+  else favs.unshift(currentVideoMeta);
   saveFavs(favs);
   syncFavBtn();
-  renderFavPanel();
+  if (document.getElementById('panelFavs').classList.contains('open')) renderFavList();
 }
 
-function renderFavPanel() {
-  const list = document.getElementById('favList');
-  if (!list) return;
-  const favs = loadFavs();
-  if (!favs.length) {
-    list.innerHTML = '<div class="fav-empty">还没有收藏的视频，看完觉得好的点 ♡ 收藏吧～</div>';
-    return;
+/* ── Side Drawer ── */
+let activePanel = null;
+
+function openSidePanel(name) {
+  // Close previously open panel
+  if (activePanel && activePanel !== name) {
+    document.getElementById('panel' + cap(activePanel))?.classList.remove('open');
+    document.querySelector(`.side-tab[data-panel="${activePanel}"]`)?.classList.remove('active');
   }
-  list.innerHTML = favs.map((v, i) => `
-    <div class="featured-card" data-fav-idx="${i}" title="${esc(v.title)}">
-      <img class="featured-thumb" src="${ytThumb(v.url)}" alt="${esc(v.title)}" loading="lazy"
-           onerror="this.style.background='#eee';this.style.height='60px'" />
-      <button class="fav-remove-btn" data-remove-idx="${i}" title="移除收藏">✕</button>
-      <div class="featured-info">
-        <div class="featured-card-title">${esc(v.title)}</div>
-        <div class="featured-card-tag">${v.platform === 'bilibili' ? 'Bilibili' : 'YouTube'}</div>
-      </div>
-    </div>
-  `).join('');
+  activePanel = name;
+  document.getElementById('panel' + cap(name))?.classList.add('open');
+  document.querySelector(`.side-tab[data-panel="${name}"]`)?.classList.add('active');
+  document.getElementById('drawerBackdrop')?.classList.remove('hidden');
 
-  list.addEventListener('click', e => {
-    // Remove button
-    const removeBtn = e.target.closest('.fav-remove-btn');
-    if (removeBtn) {
-      e.stopPropagation();
-      let favs = loadFavs();
-      favs.splice(+removeBtn.dataset.removeIdx, 1);
-      saveFavs(favs);
-      syncFavBtn();
-      renderFavPanel();
-      return;
-    }
-    // Click card → load
-    const card = e.target.closest('.featured-card[data-fav-idx]');
-    if (!card) return;
-    const v = loadFavs()[+card.dataset.favIdx];
-    if (!v) return;
-    document.getElementById('videoUrl').value = v.url;
-    hideFavPanel();
-    loadVideo();
-  });
+  if (name === 'featured') renderFeaturedList();
+  if (name === 'favs')     renderFavList();
 }
 
-function showFavPanel() {
-  renderFavPanel();
-  document.getElementById('favPanel').classList.remove('hidden');
-  setTimeout(updateFeaturedHeight, 50);
+function closeSidePanel(name) {
+  document.getElementById('panel' + cap(name))?.classList.remove('open');
+  document.querySelector(`.side-tab[data-panel="${name}"]`)?.classList.remove('active');
+  if (activePanel === name) activePanel = null;
+  if (!activePanel) document.getElementById('drawerBackdrop')?.classList.add('hidden');
 }
 
-function hideFavPanel() {
-  document.getElementById('favPanel').classList.add('hidden');
-  setTimeout(updateFeaturedHeight, 50);
+function toggleSidePanel(name) {
+  const panel = document.getElementById('panel' + cap(name));
+  if (panel?.classList.contains('open')) closeSidePanel(name);
+  else openSidePanel(name);
 }
 
-function toggleFavPanel() {
-  const panel = document.getElementById('favPanel');
-  if (panel.classList.contains('hidden')) showFavPanel();
-  else hideFavPanel();
-}
+function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
 /* ── Featured Videos ── */
 const FEATURED_VIDEOS = [
-  {
-    url: 'https://www.youtube.com/watch?v=o-Bcl93OnU0',
-    title: 'English Conversation Practice',
-    tag: 'YouTube · 英语对话',
-  },
-  {
-    url: 'https://www.youtube.com/watch?v=LeqjcafMu9o',
-    title: 'English Listening & Speaking',
-    tag: 'YouTube · 听说训练',
-  },
-  {
-    url: 'https://www.youtube.com/watch?v=HluANRwPyNo',
-    title: 'TED · Do schools kill creativity?',
-    tag: 'YouTube · TED 演讲',
-  },
-  {
-    url: 'https://www.youtube.com/watch?v=8S0FDjFBj8o',
-    title: 'BBC Learning English – 6 Minute English',
-    tag: 'YouTube · BBC 英语',
-  },
-  {
-    url: 'https://www.youtube.com/watch?v=arj7oStGLkU',
-    title: 'TED · Inside the mind of a master procrastinator',
-    tag: 'YouTube · TED 演讲',
-  },
+  { url: 'https://www.youtube.com/watch?v=o-Bcl93OnU0', title: 'English Conversation Practice', tag: 'YouTube · 英语对话' },
+  { url: 'https://www.youtube.com/watch?v=LeqjcafMu9o', title: 'English Listening & Speaking',  tag: 'YouTube · 听说训练' },
+  { url: 'https://www.youtube.com/watch?v=HluANRwPyNo', title: 'TED · Do schools kill creativity?', tag: 'YouTube · TED 演讲' },
+  { url: 'https://www.youtube.com/watch?v=8S0FDjFBj8o', title: 'BBC Learning English – 6 Minute English', tag: 'YouTube · BBC 英语' },
+  { url: 'https://www.youtube.com/watch?v=arj7oStGLkU', title: 'TED · Inside the mind of a master procrastinator', tag: 'YouTube · TED 演讲' },
 ];
 
 function ytThumb(url) {
@@ -131,47 +75,35 @@ function ytThumb(url) {
   return m ? `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg` : '';
 }
 
-function renderFeatured() {
+function makeVideoCard(v, attrs = '') {
+  return `
+    <div class="side-video-card" ${attrs} title="${esc(v.title)}">
+      <img class="side-video-thumb" src="${ytThumb(v.url)}" alt="${esc(v.title)}" loading="lazy"
+           onerror="this.style.visibility='hidden'" />
+      <div class="side-video-info">
+        <div class="side-video-title">${esc(v.title)}</div>
+        <div class="side-video-tag">${esc(v.tag || (v.platform === 'bilibili' ? 'Bilibili' : 'YouTube'))}</div>
+      </div>
+    </div>`;
+}
+
+function renderFeaturedList() {
   const list = document.getElementById('featuredList');
   if (!list) return;
-  list.innerHTML = FEATURED_VIDEOS.map((v, i) => `
-    <div class="featured-card" data-idx="${i}" title="${v.title}">
-      <img class="featured-thumb" src="${ytThumb(v.url)}" alt="${v.title}" loading="lazy" />
-      <div class="featured-info">
-        <div class="featured-card-title">${v.title}</div>
-        <div class="featured-card-tag">${v.tag}</div>
-      </div>
-    </div>
-  `).join('');
-
-  list.addEventListener('click', e => {
-    const card = e.target.closest('.featured-card');
-    if (!card) return;
-    const v = FEATURED_VIDEOS[+card.dataset.idx];
-    document.getElementById('videoUrl').value = v.url;
-    loadVideo();
-  });
+  list.innerHTML = FEATURED_VIDEOS.map((v, i) => makeVideoCard(v, `data-feat-idx="${i}"`)).join('');
 }
 
-function updateFeaturedHeight() {
-  const sec = document.getElementById('featuredSection');
-  if (!sec) return;
-  const h = sec.offsetHeight;
-  document.documentElement.style.setProperty('--featured-h', h + 'px');
-  // Also update .left-col sticky top
-  const leftCol = document.querySelector('.left-col');
-  if (leftCol && window.innerWidth > 768) {
-    leftCol.style.top = (49 + h) + 'px';
-    leftCol.style.height = `calc(100vh - ${49 + h}px)`;
+function renderFavList() {
+  const list = document.getElementById('favList');
+  if (!list) return;
+  const favs = loadFavs();
+  if (!favs.length) {
+    list.innerHTML = '<div class="fav-empty">还没有收藏的视频，<br>看完觉得好的点 ♡ 收藏吧～</div>';
+    return;
   }
-}
-
-function toggleFeatured() {
-  const sec = document.getElementById('featuredSection');
-  const btn = document.getElementById('featuredToggle');
-  sec.classList.toggle('collapsed');
-  btn.textContent = sec.classList.contains('collapsed') ? '▼' : '▲';
-  setTimeout(updateFeaturedHeight, 50);
+  list.innerHTML = favs.map((v, i) =>
+    makeVideoCard(v, `data-fav-idx="${i}"`) .replace('</div>', `<button class="side-remove-btn" data-remove-idx="${i}" title="移除">✕</button></div>`)
+  ).join('');
 }
 
 /* ── State ── */
@@ -314,14 +246,8 @@ async function loadVideo() {
     document.getElementById('favBtn').classList.remove('hidden');
     syncFavBtn();
 
-    // Auto-collapse featured section to give video more room
-    const featSec = document.getElementById('featuredSection');
-    const featBtn = document.getElementById('featuredToggle');
-    if (featSec && !featSec.classList.contains('collapsed')) {
-      featSec.classList.add('collapsed');
-      if (featBtn) featBtn.textContent = '▼';
-      setTimeout(updateFeaturedHeight, 50);
-    }
+    // Close any open side panel when video loads
+    if (activePanel) closeSidePanel(activePanel);
 
     vidSec.classList.remove('hidden');
     if (platform === 'bilibili') {
@@ -761,16 +687,53 @@ function setSpeed(rate) {
 
 /* ── DOM ready ── */
 document.addEventListener('DOMContentLoaded', () => {
-  // Featured videos
-  renderFeatured();
-  updateFeaturedHeight();
-  window.addEventListener('resize', updateFeaturedHeight);
-  document.getElementById('featuredToggle')?.addEventListener('click', toggleFeatured);
+  // Side drawer tab buttons
+  document.querySelectorAll('.side-tab').forEach(btn => {
+    btn.addEventListener('click', () => toggleSidePanel(btn.dataset.panel));
+  });
+  // Close buttons inside panels
+  document.querySelectorAll('.side-panel-close').forEach(btn => {
+    btn.addEventListener('click', () => closeSidePanel(btn.dataset.panel));
+  });
+  // Backdrop closes all panels
+  document.getElementById('drawerBackdrop')?.addEventListener('click', () => {
+    if (activePanel) closeSidePanel(activePanel);
+  });
 
-  // Favorites
+  // Click on featured video cards
+  document.getElementById('featuredList')?.addEventListener('click', e => {
+    const card = e.target.closest('[data-feat-idx]');
+    if (!card) return;
+    const v = FEATURED_VIDEOS[+card.dataset.featIdx];
+    if (!v) return;
+    document.getElementById('videoUrl').value = v.url;
+    closeSidePanel('featured');
+    loadVideo();
+  });
+
+  // Click on favorites cards / remove buttons
+  document.getElementById('favList')?.addEventListener('click', e => {
+    const removeBtn = e.target.closest('.side-remove-btn');
+    if (removeBtn) {
+      e.stopPropagation();
+      let favs = loadFavs();
+      favs.splice(+removeBtn.dataset.removeIdx, 1);
+      saveFavs(favs);
+      syncFavBtn();
+      renderFavList();
+      return;
+    }
+    const card = e.target.closest('[data-fav-idx]');
+    if (!card) return;
+    const v = loadFavs()[+card.dataset.favIdx];
+    if (!v) return;
+    document.getElementById('videoUrl').value = v.url;
+    closeSidePanel('favs');
+    loadVideo();
+  });
+
+  // Favorite (heart) button in topbar
   document.getElementById('favBtn').addEventListener('click', toggleFav);
-  document.getElementById('favPanelBtn').addEventListener('click', toggleFavPanel);
-  document.getElementById('favPanelClose').addEventListener('click', hideFavPanel);
 
   // Load button
   document.getElementById('loadBtn').addEventListener('click', loadVideo);
