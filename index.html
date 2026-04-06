@@ -45,11 +45,13 @@
       <div id="controlBar" class="control-bar hidden">
         <div class="speed-group">
           <span class="control-label">速度</span>
-          <button class="speed-btn" data-rate="0.5">0.5x</button>
-          <button class="speed-btn" data-rate="0.75">0.75x</button>
-          <button class="speed-btn active" data-rate="1">1x</button>
-          <button class="speed-btn" data-rate="1.25">1.25x</button>
-          <button class="speed-btn" data-rate="1.5">1.5x</button>
+          <div class="speed-seg">
+            <button class="speed-btn" data-rate="0.5">0.5×</button>
+            <button class="speed-btn" data-rate="0.75">0.75×</button>
+            <button class="speed-btn active" data-rate="1">1×</button>
+            <button class="speed-btn" data-rate="1.25">1.25×</button>
+            <button class="speed-btn" data-rate="1.5">1.5×</button>
+          </div>
         </div>
         <div class="progress-group">
           <span id="practiceCount" class="practice-count">已练 0 / 0 句</span>
@@ -62,10 +64,10 @@
       <div id="subtitlesPanel" class="subtitles-panel">
         <div id="sentencesList" class="sentences-list">
           <div class="empty-state">
-            <div class="empty-icon">🎬</div>
-            <p>粘贴 YouTube 或 Bilibili 链接</p>
-            <p>开始中英双语跟读练习</p>
-            <p class="hint">自动获取字幕 · 双语对照 · 跟读评分</p>
+            <div class="empty-icon">🎧</div>
+            <p>粘贴一个 YouTube 链接</p>
+            <p style="font-weight:400;color:var(--label-3);font-size:14px;margin-top:2px">开始你的英语跟读之旅</p>
+            <p class="hint">自动获取字幕 · 中英双语对照<br>逐句跟读 · AI 评分反馈</p>
           </div>
         </div>
       </div>
