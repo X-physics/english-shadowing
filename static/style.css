@@ -341,30 +341,6 @@ body {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ── Tab Bar ── */
-.tab-bar {
-  display: flex;
-  border-top: 1px solid #eee;
-  border-bottom: 1px solid #f0f0f0;
-  background: #fff;
-  flex-shrink: 0;
-}
-.tab {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 7px 4px 6px;
-  border: none;
-  background: none;
-  cursor: pointer;
-  color: #aaa;
-  font-size: 11px;
-  transition: color .15s;
-}
-.tab svg { width: 20px; height: 20px; }
-.tab.active { color: #4CAF50; }
 
 /* ── Subtitles Panel ── */
 .subtitles-panel {

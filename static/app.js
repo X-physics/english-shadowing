@@ -217,14 +217,12 @@ async function loadVideo() {
   const loadBtn = document.getElementById('loadBtn');
   const loading = document.getElementById('loadingState');
   const vidSec  = document.getElementById('videoSection');
-  const tabBar  = document.getElementById('tabBar');
   const list    = document.getElementById('sentencesList');
 
   loadBtn.disabled = true;
   loadBtn.textContent = '加载中…';
   loading.classList.remove('hidden');
   vidSec.classList.add('hidden');
-  tabBar.classList.add('hidden');
   list.innerHTML = '';
 
   try {
@@ -256,7 +254,6 @@ async function loadVideo() {
       initYouTubePlayer(data.video_id);
     }
     renderCards(list);
-    tabBar.classList.remove('hidden');
 
   } catch {
     showError('网络错误，请检查连接后重试', list);
