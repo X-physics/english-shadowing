@@ -1,3 +1,80 @@
+/* ── Featured Videos ── */
+const FEATURED_VIDEOS = [
+  {
+    url: 'https://www.youtube.com/watch?v=o-Bcl93OnU0',
+    title: 'English Conversation Practice',
+    tag: 'YouTube · 英语对话',
+  },
+  {
+    url: 'https://www.youtube.com/watch?v=LeqjcafMu9o',
+    title: 'English Listening & Speaking',
+    tag: 'YouTube · 听说训练',
+  },
+  {
+    url: 'https://www.youtube.com/watch?v=HluANRwPyNo',
+    title: 'TED · Do schools kill creativity?',
+    tag: 'YouTube · TED 演讲',
+  },
+  {
+    url: 'https://www.youtube.com/watch?v=8S0FDjFBj8o',
+    title: 'BBC Learning English – 6 Minute English',
+    tag: 'YouTube · BBC 英语',
+  },
+  {
+    url: 'https://www.youtube.com/watch?v=arj7oStGLkU',
+    title: 'TED · Inside the mind of a master procrastinator',
+    tag: 'YouTube · TED 演讲',
+  },
+];
+
+function ytThumb(url) {
+  const m = url.match(/(?:v=|youtu\.be\/)([^&?#\s]{11})/);
+  return m ? `https://img.youtube.com/vi/${m[1]}/mqdefault.jpg` : '';
+}
+
+function renderFeatured() {
+  const list = document.getElementById('featuredList');
+  if (!list) return;
+  list.innerHTML = FEATURED_VIDEOS.map((v, i) => `
+    <div class="featured-card" data-idx="${i}" title="${v.title}">
+      <img class="featured-thumb" src="${ytThumb(v.url)}" alt="${v.title}" loading="lazy" />
+      <div class="featured-info">
+        <div class="featured-card-title">${v.title}</div>
+        <div class="featured-card-tag">${v.tag}</div>
+      </div>
+    </div>
+  `).join('');
+
+  list.addEventListener('click', e => {
+    const card = e.target.closest('.featured-card');
+    if (!card) return;
+    const v = FEATURED_VIDEOS[+card.dataset.idx];
+    document.getElementById('videoUrl').value = v.url;
+    loadVideo();
+  });
+}
+
+function updateFeaturedHeight() {
+  const sec = document.getElementById('featuredSection');
+  if (!sec) return;
+  const h = sec.offsetHeight;
+  document.documentElement.style.setProperty('--featured-h', h + 'px');
+  // Also update .left-col sticky top
+  const leftCol = document.querySelector('.left-col');
+  if (leftCol && window.innerWidth > 768) {
+    leftCol.style.top = (49 + h) + 'px';
+    leftCol.style.height = `calc(100vh - ${49 + h}px)`;
+  }
+}
+
+function toggleFeatured() {
+  const sec = document.getElementById('featuredSection');
+  const btn = document.getElementById('featuredToggle');
+  sec.classList.toggle('collapsed');
+  btn.textContent = sec.classList.contains('collapsed') ? '▼' : '▲';
+  setTimeout(updateFeaturedHeight, 50);
+}
+
 /* ── State ── */
 let player = null;          // YouTube player instance
 let platform = 'youtube';   // 'youtube' | 'bilibili'
@@ -127,6 +204,15 @@ async function loadVideo() {
 
     transcript = data.transcript;
     platform   = data.platform || 'youtube';
+
+    // Auto-collapse featured section to give video more room
+    const featSec = document.getElementById('featuredSection');
+    const featBtn = document.getElementById('featuredToggle');
+    if (featSec && !featSec.classList.contains('collapsed')) {
+      featSec.classList.add('collapsed');
+      if (featBtn) featBtn.textContent = '▼';
+      setTimeout(updateFeaturedHeight, 50);
+    }
 
     vidSec.classList.remove('hidden');
     if (platform === 'bilibili') {
@@ -566,6 +652,12 @@ function setSpeed(rate) {
 
 /* ── DOM ready ── */
 document.addEventListener('DOMContentLoaded', () => {
+  // Featured videos
+  renderFeatured();
+  updateFeaturedHeight();
+  window.addEventListener('resize', updateFeaturedHeight);
+  document.getElementById('featuredToggle')?.addEventListener('click', toggleFeatured);
+
   // Load button
   document.getElementById('loadBtn').addEventListener('click', loadVideo);
   document.getElementById('videoUrl').addEventListener('keydown', e => {
