@@ -9,18 +9,10 @@
 <body>
 <div class="app">
 
-  <!-- ── 顶部输入栏 ── -->
-  <div class="topbar">
-    <input id="videoUrl" class="url-input" type="text"
-           placeholder="粘贴 YouTube 或 Bilibili 视频链接，按回车或点加载…" />
-    <button id="loadBtn" class="load-btn">加载</button>
-    <button id="favBtn" class="fav-btn hidden" title="收藏此视频">♡</button>
-  </div>
-
-  <!-- ── 主内容区（视频左 2 / 句子右 1） ── -->
+  <!-- ── 主内容区（视频左 2 / 右栏 1） ── -->
   <div class="main-layout">
 
-    <!-- 左：视频 + 加载中 -->
+    <!-- 左：视频（占满全高） -->
     <div class="left-col">
       <div id="videoSection" class="video-section hidden">
         <div id="player"></div>
@@ -38,9 +30,18 @@
       </div>
     </div>
 
-    <!-- 右：标签栏 + 句子面板 -->
+    <!-- 右：输入栏 + 标签栏 + 句子面板 -->
     <div class="right-col">
 
+      <!-- 输入栏（在右侧列顶部，与字幕同宽） -->
+      <div class="topbar">
+        <input id="videoUrl" class="url-input" type="text"
+               placeholder="粘贴视频链接，按回车或点加载…" />
+        <button id="loadBtn" class="load-btn">加载</button>
+        <button id="favBtn" class="fav-btn hidden" title="收藏此视频">♡</button>
+      </div>
+
+      <!-- 标签栏 -->
       <div id="tabBar" class="tab-bar hidden">
         <button class="tab active" data-tab="subtitles">
           <svg viewBox="0 0 24 24"><text y="18" font-size="14">文A</text></svg>
@@ -67,12 +68,14 @@
         </button>
       </div>
 
+      <!-- 字幕面板 -->
       <div id="subtitlesPanel" class="subtitles-panel">
         <div id="sentencesList" class="sentences-list">
           <div class="empty-state">
             <div class="empty-icon">🎬</div>
-            <p>输入 YouTube 或 Bilibili 链接，开始跟读练习</p>
-            <p class="hint">自动获取字幕 · 中英双语 · 跟读评分</p>
+            <p>粘贴 YouTube 或 Bilibili 链接</p>
+            <p>开始中英双语跟读练习</p>
+            <p class="hint">自动获取字幕 · 双语对照 · 跟读评分</p>
           </div>
         </div>
       </div>
@@ -82,7 +85,6 @@
 
   <!-- ── 右侧浮动抽屉 ── -->
   <div class="side-drawer" id="sideDrawer">
-    <!-- 标签按钮 -->
     <div class="side-tabs">
       <button class="side-tab" data-panel="featured" title="精选视频">
         <span class="side-tab-icon">🎬</span>
@@ -94,7 +96,6 @@
       </button>
     </div>
 
-    <!-- 精选视频面板 -->
     <div class="side-panel" id="panelFeatured">
       <div class="side-panel-header">
         <span>🎬 精选视频</span>
@@ -105,7 +106,6 @@
       </div>
     </div>
 
-    <!-- 我的收藏面板 -->
     <div class="side-panel" id="panelFavs">
       <div class="side-panel-header">
         <span>❤️ 我的收藏</span>
@@ -119,7 +119,6 @@
     </div>
   </div>
 
-  <!-- ── 遮罩（点击关闭抽屉）── -->
   <div class="drawer-backdrop hidden" id="drawerBackdrop"></div>
 
   <!-- ── 跟读弹窗 ── -->
