@@ -1,3 +1,47 @@
+/* ── Practice Scores (per video, localStorage) ── */
+let practiceScores = {};   // { sentenceIdx: bestScore }
+let currentVideoId = '';
+
+function scoreKey(videoId) { return `scores_${videoId}`; }
+
+function loadScores(videoId) {
+  try { return JSON.parse(localStorage.getItem(scoreKey(videoId)) || '{}'); }
+  catch { return {}; }
+}
+
+function saveScore(idx, score) {
+  const best = practiceScores[idx];
+  if (best === undefined || score > best) {
+    practiceScores[idx] = score;
+    localStorage.setItem(scoreKey(currentVideoId), JSON.stringify(practiceScores));
+    updateCardBadge(idx, score);
+    updateProgress();
+  }
+}
+
+function updateCardBadge(idx, score) {
+  const card = document.querySelector(`.sentence-card[data-idx="${idx}"]`);
+  if (!card) return;
+  let badge = card.querySelector('.score-badge');
+  if (!badge) {
+    badge = document.createElement('span');
+    card.querySelector('.card-head').appendChild(badge);
+  }
+  const cls = score >= 80 ? 'good' : score >= 55 ? 'ok' : 'poor';
+  badge.className = `score-badge ${cls}`;
+  badge.textContent = `${score}分`;
+}
+
+function updateProgress() {
+  const practiced = Object.keys(practiceScores).length;
+  const total     = transcript.length;
+  const pct       = total ? Math.round((practiced / total) * 100) : 0;
+  const countEl   = document.getElementById('practiceCount');
+  const fillEl    = document.getElementById('progressFill');
+  if (countEl) countEl.textContent = `已练 ${practiced} / ${total} 句`;
+  if (fillEl)  fillEl.style.width  = pct + '%';
+}
+
 /* ── Video Favorites (localStorage) ── */
 let currentVideoMeta = null;
 
@@ -231,8 +275,16 @@ async function loadVideo() {
 
     if (data.error) { showError(data.error, list); return; }
 
-    transcript = data.transcript;
-    platform   = data.platform || 'youtube';
+    transcript    = data.transcript;
+    platform      = data.platform || 'youtube';
+    currentVideoId = data.video_id;
+    practiceScores = loadScores(data.video_id);
+
+    // Show control bar and reset speed to 1x
+    document.getElementById('controlBar').classList.remove('hidden');
+    document.querySelectorAll('.speed-btn').forEach(b => b.classList.toggle('active', b.dataset.rate === '1'));
+    if (player && player.setPlaybackRate) player.setPlaybackRate(1);
+    updateProgress();
 
     // Save current video meta for the favorite button
     currentVideoMeta = {
@@ -277,10 +329,18 @@ function renderCards(listEl) {
     card.className = 'sentence-card';
     card.dataset.idx = idx;
 
+    const best = practiceScores[idx];
+    const badgeHtml = best !== undefined
+      ? `<span class="score-badge ${best >= 80 ? 'good' : best >= 55 ? 'ok' : 'poor'}">${best}分</span>`
+      : '';
+
     card.innerHTML = `
       <div class="card-head">
-        <span class="ts">${fmt(item.start)}</span>
-        <button class="star-btn" data-idx="${idx}" title="收藏">☆</button>
+        <span class="ts"><span class="card-num">${idx + 1}</span>${fmt(item.start)}</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          ${badgeHtml}
+          <button class="star-btn" data-idx="${idx}" title="收藏">☆</button>
+        </div>
       </div>
       <div class="en-text">${esc(item.english)}</div>
       <div class="zh-text">${esc(item.chinese) || '<em style="color:#ccc">翻译加载中…</em>'}</div>
@@ -295,14 +355,19 @@ function renderCards(listEl) {
         </button>
       </div>`;
 
-    // Click card background → seek
     card.addEventListener('click', e => {
       if (e.target.closest('button')) return;
-      seekAndPlay(item.start, item.duration);
+      jumpToSentence(idx);
     });
 
     listEl.appendChild(card);
   });
+
+  // Keyboard hint at bottom
+  const hint = document.createElement('div');
+  hint.className = 'kbd-hint';
+  hint.textContent = '⌨️ 空格播放/暂停 · ← → 切换句子 · S 跟读';
+  listEl.appendChild(hint);
 
   // Event delegation for card buttons
   listEl.addEventListener('click', e => {
@@ -313,6 +378,15 @@ function renderCards(listEl) {
     if (shadowBtn) openShadow(+shadowBtn.dataset.idx);
     if (starBtn)   toggleStar(+starBtn.dataset.idx, starBtn);
   });
+}
+
+/* ── Jump to sentence by index ── */
+function jumpToSentence(idx) {
+  if (idx < 0 || idx >= transcript.length) return;
+  currentIndex = idx;
+  highlightCard(idx);
+  const s = transcript[idx];
+  seekAndPlay(s.start, s.duration);
 }
 
 /* Cancel any pending single-sentence timer */
@@ -675,11 +749,18 @@ function showResult(userText) {
   document.getElementById('userSaid').textContent = `你说的：${userText}`;
   document.getElementById('resultBox').classList.remove('hidden');
   document.getElementById('recordStatus').textContent = '';
+
+  // Persist score
+  const sentenceIdx = transcript.indexOf(shadowTarget);
+  if (sentenceIdx >= 0) saveScore(sentenceIdx, score);
 }
 
-/* ── Speed control (倍速) ── */
+/* ── Speed control ── */
 function setSpeed(rate) {
   if (player && player.setPlaybackRate) player.setPlaybackRate(rate);
+  document.querySelectorAll('.speed-btn').forEach(b => {
+    b.classList.toggle('active', parseFloat(b.dataset.rate) === rate);
+  });
 }
 
 /* ── DOM ready ── */
@@ -731,6 +812,43 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Favorite (heart) button in topbar
   document.getElementById('favBtn').addEventListener('click', toggleFav);
+
+  // Speed buttons
+  document.querySelectorAll('.speed-btn').forEach(btn => {
+    btn.addEventListener('click', () => setSpeed(parseFloat(btn.dataset.rate)));
+  });
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    // Don't hijack input fields
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    // Don't hijack when modal is open
+    const modalOpen = document.getElementById('shadowModal').classList.contains('open');
+
+    if (!modalOpen) {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        if (transcript.length === 0) return;
+        if (platform === 'youtube' && player) {
+          const state = player.getPlayerState?.();
+          if (state === YT.PlayerState.PLAYING) player.pauseVideo();
+          else if (currentIndex >= 0) jumpToSentence(currentIndex);
+          else jumpToSentence(0);
+        }
+      }
+      if ((e.key === 'ArrowRight' || e.key === 'l') && transcript.length) {
+        e.preventDefault();
+        jumpToSentence(Math.min(transcript.length - 1, (currentIndex < 0 ? 0 : currentIndex) + 1));
+      }
+      if ((e.key === 'ArrowLeft' || e.key === 'j') && transcript.length) {
+        e.preventDefault();
+        jumpToSentence(Math.max(0, (currentIndex < 0 ? 0 : currentIndex) - 1));
+      }
+      if (e.key === 's' && transcript.length && currentIndex >= 0) {
+        openShadow(currentIndex);
+      }
+    }
+  });
 
   // Load button
   document.getElementById('loadBtn').addEventListener('click', loadVideo);

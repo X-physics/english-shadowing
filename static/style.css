@@ -308,6 +308,102 @@ body {
   .side-panel { width: min(300px, 85vw); max-height: 60vh; }
 }
 
+/* ── Control Bar (speed + progress) ── */
+.control-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #fafafa;
+  border-bottom: 1px solid #eee;
+  flex-shrink: 0;
+}
+
+.speed-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.control-label {
+  font-size: 11px;
+  color: #aaa;
+  font-weight: 600;
+  margin-right: 2px;
+  white-space: nowrap;
+}
+
+.speed-btn {
+  padding: 3px 9px;
+  border: 1.5px solid #e0e0e0;
+  border-radius: 20px;
+  background: #fff;
+  font-size: 12px;
+  color: #666;
+  cursor: pointer;
+  transition: all .15s;
+  font-weight: 500;
+}
+.speed-btn:hover { border-color: #4CAF50; color: #4CAF50; }
+.speed-btn.active { background: #4CAF50; border-color: #4CAF50; color: #fff; font-weight: 700; }
+
+.progress-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.practice-count {
+  font-size: 11px;
+  color: #aaa;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.progress-track {
+  flex: 1;
+  height: 4px;
+  background: #eee;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4CAF50, #81C784);
+  border-radius: 2px;
+  width: 0%;
+  transition: width .4s ease;
+}
+
+/* ── Score badge on cards ── */
+.score-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  line-height: 1.4;
+}
+.score-badge.good { background: #E8F5E9; color: #2E7D32; }
+.score-badge.ok   { background: #FFF8E1; color: #E65100; }
+.score-badge.poor { background: #FFEBEE; color: #C62828; }
+
+/* ── Keyboard shortcut hint ── */
+.kbd-hint {
+  font-size: 10px;
+  color: #ccc;
+  text-align: center;
+  padding: 6px 0 2px;
+  letter-spacing: .3px;
+}
+
+.card-num {
+  font-size: 10px;
+  color: #ddd;
+  font-variant-numeric: tabular-nums;
+  margin-right: 4px;
+}
+
 /* ── Video ── */
 .video-section {
   width: 100%;
@@ -381,11 +477,12 @@ body {
 .sentence-card {
   padding: 14px 16px 12px;
   border-bottom: 1px solid #f5f5f5;
+  border-left: 3px solid transparent;
   cursor: pointer;
-  transition: background .12s;
+  transition: background .12s, border-color .15s;
 }
 .sentence-card:hover { background: #fafafa; }
-.sentence-card.active { background: #FFF8E7; }
+.sentence-card.active { background: #FFF8E7; border-left-color: #4CAF50; }
 
 .card-head {
   display: flex;
