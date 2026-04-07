@@ -298,6 +298,7 @@ def _get_yt_transcript_scraperapi(video_id, api_key):
         num_pools=4,
         maxsize=4,
         timeout=urllib3.Timeout(connect=10, read=30),
+        cert_reqs='CERT_NONE',
     )
 
     HEADERS = {
