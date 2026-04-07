@@ -276,47 +276,96 @@ def get_youtube_title(video_id):
         return video_id
 
 
-# ── YouTube API builder (proxy support for Railway deployment) ────────────────
+# ── YouTube transcript fetcher ────────────────────────────────────────────────
 
-class _NoVerifyProxyConfig:
-    """GenericProxyConfig equivalent that also disables SSL verification.
-    Needed when ScraperAPI (or any MITM proxy) intercepts HTTPS traffic and
-    presents its own certificate — which Python's default CA bundle rejects.
+def _get_yt_transcript_scraperapi(video_id, api_key):
+    """Fetch YouTube transcript via ScraperAPI REST endpoint.
+    Uses direct HTTP requests to api.scraperapi.com instead of proxy mode,
+    which avoids HTTP CONNECT / 407 authentication issues entirely.
     """
-    def __init__(self, http_url: str, https_url: str):
-        self._http = http_url
-        self._https = https_url
+    import requests as req
+    import json
 
-    def __call__(self) -> dict:
-        return {
-            'proxies': {'http': self._http, 'https': self._https},
-            'verify': False,
-        }
+    def sa_fetch(url):
+        r = req.get(
+            'http://api.scraperapi.com',
+            params={'api_key': api_key, 'url': url},
+            timeout=30,
+        )
+        r.raise_for_status()
+        return r
+
+    # 1. Fetch the video page
+    page = sa_fetch(f'https://www.youtube.com/watch?v={video_id}').text
+
+    # 2. Extract ytInitialPlayerResponse JSON embedded in the page
+    m = re.search(r'ytInitialPlayerResponse\s*=\s*', page)
+    if not m:
+        raise Exception('无法解析视频页面，请稍后重试')
+    decoder = json.JSONDecoder()
+    try:
+        player_data, _ = decoder.raw_decode(page, m.end())
+    except Exception:
+        raise Exception('无法解析视频数据')
+
+    tracks = (player_data
+              .get('captions', {})
+              .get('playerCaptionsTracklistRenderer', {})
+              .get('captionTracks', []))
+    if not tracks:
+        raise Exception('该视频未开启字幕功能')
+
+    # 3. Prefer English tracks
+    chosen = None
+    for lang in ('en', 'en-US', 'en-GB'):
+        chosen = next((t for t in tracks if t.get('languageCode') == lang), None)
+        if chosen:
+            break
+    if not chosen:
+        chosen = next(
+            (t for t in tracks if t.get('languageCode', '').startswith('en')),
+            tracks[0]
+        )
+
+    caption_url = chosen.get('baseUrl', '')
+    if not caption_url:
+        raise Exception('无法获取字幕地址')
+    if 'fmt=' not in caption_url:
+        caption_url += '&fmt=json3'
+
+    # 4. Fetch caption data
+    events = sa_fetch(caption_url).json().get('events', [])
+    segments = []
+    for e in events:
+        if 'segs' not in e:
+            continue
+        text = ''.join(s.get('utf8', '') for s in e['segs']).replace('\n', ' ').strip()
+        if text:
+            segments.append({
+                'text': text,
+                'start': e['tStartMs'] / 1000,
+                'duration': e.get('dDurationMs', 3000) / 1000,
+            })
+    if not segments:
+        raise Exception('字幕内容为空')
+    return segments
 
 
-def _build_yt_api():
-    """Return a YouTubeTranscriptApi instance, optionally configured with a proxy.
+def _fetch_yt_raw(video_id):
+    """Return raw transcript segments for a YouTube video.
 
     Priority:
-      1. ScraperAPI  – set SCRAPERAPI_KEY env var (free tier: scraperapi.com)
-      2. Webshare    – set WEBSHARE_PROXY_USERNAME + WEBSHARE_PROXY_PASSWORD
-      3. No proxy    – local development / environments with clean IPs
+      1. ScraperAPI REST API  – set SCRAPERAPI_KEY env var
+      2. Webshare proxy       – set WEBSHARE_PROXY_USERNAME + WEBSHARE_PROXY_PASSWORD
+      3. No proxy             – local dev / clean-IP host
     """
-    import urllib3
     from youtube_transcript_api import YouTubeTranscriptApi
+    from youtube_transcript_api._errors import NoTranscriptFound, TranscriptsDisabled
 
-    # ── Option 1: ScraperAPI residential proxy ────────────────────────────────
+    # ── Option 1: ScraperAPI REST (recommended for Railway) ──────────────────
     scraper_key = os.environ.get('SCRAPERAPI_KEY', '').strip()
     if scraper_key:
-        try:
-            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-            proxy_url = f'http://scraperapi:{scraper_key}@proxy-server.scraperapi.com:8001'
-            return YouTubeTranscriptApi(proxy_config=_NoVerifyProxyConfig(
-                http_url=proxy_url,
-                https_url=proxy_url,
-            ))
-        except Exception:
-            pass  # fall through to next option
+        return _get_yt_transcript_scraperapi(video_id, scraper_key)
 
     # ── Option 2: Webshare residential proxy ─────────────────────────────────
     proxy_user = os.environ.get('WEBSHARE_PROXY_USERNAME', '').strip()
@@ -324,15 +373,28 @@ def _build_yt_api():
     if proxy_user and proxy_pass:
         try:
             from youtube_transcript_api.proxies import WebshareProxyConfig
-            return YouTubeTranscriptApi(proxy_config=WebshareProxyConfig(
+            api = YouTubeTranscriptApi(proxy_config=WebshareProxyConfig(
                 proxy_username=proxy_user,
                 proxy_password=proxy_pass,
             ))
         except Exception:
-            pass  # fall through to no-proxy fallback
+            api = YouTubeTranscriptApi()
+    else:
+        # ── Option 3: No proxy ────────────────────────────────────────────────
+        api = YouTubeTranscriptApi()
 
-    # ── Option 3: No proxy (local dev or clean-IP host) ───────────────────────
-    return YouTubeTranscriptApi()
+    try:
+        raw = api.fetch(video_id, languages=['en', 'en-US', 'en-GB'])
+    except NoTranscriptFound:
+        transcript_list = api.list(video_id)
+        try:
+            raw = transcript_list.find_generated_transcript(['en']).fetch()
+        except Exception:
+            raw = next(iter(transcript_list)).fetch()
+    except TranscriptsDisabled:
+        raise Exception('该视频未开启字幕功能')
+
+    return [{'text': s.text, 'start': s.start, 'duration': s.duration} for s in raw]
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -393,24 +455,7 @@ def get_transcript():
         return jsonify({'error': '无法识别视频链接，请粘贴 YouTube 或 Bilibili 视频链接'}), 400
 
     try:
-        from youtube_transcript_api import YouTubeTranscriptApi
-        from youtube_transcript_api._errors import NoTranscriptFound, TranscriptsDisabled
-
-        api = _build_yt_api()
-
-        raw = None
-        try:
-            raw = api.fetch(video_id, languages=['en', 'en-US', 'en-GB'])
-        except NoTranscriptFound:
-            transcript_list = api.list(video_id)
-            try:
-                raw = transcript_list.find_generated_transcript(['en']).fetch()
-            except Exception:
-                raw = next(iter(transcript_list)).fetch()
-        except TranscriptsDisabled:
-            return jsonify({'error': '该视频未开启字幕功能'}), 400
-
-        raw_list = [{'text': s.text, 'start': s.start, 'duration': s.duration} for s in raw]
+        raw_list = _fetch_yt_raw(video_id)
         merged = merge_segments(raw_list)
         if not merged:
             return jsonify({'error': '字幕内容为空'}), 400
