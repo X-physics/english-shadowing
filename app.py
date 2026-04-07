@@ -279,51 +279,44 @@ def get_youtube_title(video_id):
 # ── YouTube transcript fetcher ────────────────────────────────────────────────
 
 def _get_yt_transcript_scraperapi(video_id, api_key):
-    """Fetch YouTube transcript via ScraperAPI proxy using urllib3.ProxyManager.
+    """Fetch YouTube transcript using ScraperAPI.
 
-    urllib3.ProxyManager sends Proxy-Authorization inside the CONNECT request,
-    which correctly authenticates HTTPS tunnels — fixing the 407 error that
-    occurs with requests' built-in proxy support.
+    Step 1 — HTML page:  ScraperAPI REST API  (confirmed working on Railway)
+    Step 2 — Caption JSON: try direct with SSL disabled → fallback ScraperAPI REST
+              with autoparse=false so it returns raw bytes instead of parsed HTML.
     """
-    import urllib3
+    import requests as req
     import json
-    import base64
+    import urllib3
 
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    proxy_auth = base64.b64encode(f'scraperapi:{api_key}'.encode()).decode()
-    http = urllib3.ProxyManager(
-        'http://proxy-server.scraperapi.com:8001',
-        proxy_headers={'Proxy-Authorization': f'Basic {proxy_auth}'},
-        num_pools=4,
-        maxsize=4,
-        timeout=urllib3.Timeout(connect=10, read=30),
-        cert_reqs='CERT_NONE',
+    UA = (
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+        'AppleWebKit/537.36 (KHTML, like Gecko) '
+        'Chrome/124.0.0.0 Safari/537.36'
     )
+    HEADERS = {'User-Agent': UA, 'Accept-Language': 'en-US,en;q=0.9'}
 
-    HEADERS = {
-        'User-Agent': (
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-            'AppleWebKit/537.36 (KHTML, like Gecko) '
-            'Chrome/124.0.0.0 Safari/537.36'
-        ),
-        'Accept-Language': 'en-US,en;q=0.9',
-    }
+    def sa_rest(url, **extra):
+        """Fetch URL via ScraperAPI REST endpoint."""
+        params = {'api_key': api_key, 'url': url, **extra}
+        r = req.get('http://api.scraperapi.com', params=params, timeout=30)
+        r.raise_for_status()
+        return r
 
-    # 1. Fetch video page through proxy
-    r = http.request('GET', f'https://www.youtube.com/watch?v={video_id}',
-                     headers=HEADERS)
-    page = r.data.decode('utf-8', errors='replace')
+    # ── 1. Fetch video page via ScraperAPI REST ───────────────────────────────
+    page = sa_rest(f'https://www.youtube.com/watch?v={video_id}').text
     if len(page) < 500:
         raise Exception(
-            f'代理返回内容过短（{len(page)} 字节，HTTP {r.status}），'
+            f'ScraperAPI 返回内容过短（{len(page)} 字节），'
             '请确认 SCRAPERAPI_KEY 正确且账户有剩余额度'
         )
 
-    # 2. Extract ytInitialPlayerResponse
+    # ── 2. Extract ytInitialPlayerResponse ────────────────────────────────────
     m = re.search(r'ytInitialPlayerResponse\s*=\s*', page)
     if not m:
-        raise Exception('视频页面中未找到字幕数据，代理可能返回了验证页面，请稍后重试')
+        raise Exception('视频页面中未找到字幕数据，请稍后重试')
     decoder = json.JSONDecoder()
     try:
         player_data, _ = decoder.raw_decode(page, m.end())
@@ -337,7 +330,7 @@ def _get_yt_transcript_scraperapi(video_id, api_key):
     if not tracks:
         raise Exception('该视频未开启字幕功能')
 
-    # 3. Choose English track
+    # ── 3. Choose English track ───────────────────────────────────────────────
     chosen = None
     for lang in ('en', 'en-US', 'en-GB'):
         chosen = next((t for t in tracks if t.get('languageCode') == lang), None)
@@ -355,16 +348,36 @@ def _get_yt_transcript_scraperapi(video_id, api_key):
     if 'fmt=' not in caption_url:
         caption_url += '&fmt=json3'
 
-    # 4. Fetch caption file through the same proxy
-    r2 = http.request('GET', caption_url, headers=HEADERS)
-    try:
-        events = json.loads(r2.data.decode('utf-8')).get('events', [])
-    except Exception as e:
-        raise Exception(
-            f'字幕文件解析失败（HTTP {r2.status}，'
-            f'{len(r2.data)} 字节）：{e}'
-        )
+    # ── 4. Fetch caption JSON ─────────────────────────────────────────────────
+    events = None
+    errors = []
 
+    # Attempt A: direct request with SSL verification disabled
+    try:
+        r = req.get(
+            caption_url,
+            headers={**HEADERS, 'Referer': f'https://www.youtube.com/watch?v={video_id}'},
+            verify=False,
+            timeout=15,
+        )
+        if r.status_code == 200 and r.text.strip():
+            events = r.json().get('events', [])
+    except Exception as e:
+        errors.append(f'直连: {e}')
+
+    # Attempt B: ScraperAPI REST with autoparse=false (returns raw response body)
+    if events is None:
+        try:
+            r = sa_rest(caption_url, autoparse='false', render='false')
+            if r.text.strip():
+                events = r.json().get('events', [])
+        except Exception as e:
+            errors.append(f'ScraperAPI REST: {e}')
+
+    if events is None:
+        raise Exception(f'字幕文件获取失败（{"; ".join(errors)}）')
+
+    # ── 5. Build segments ─────────────────────────────────────────────────────
     segments = []
     for e in events:
         if 'segs' not in e:
