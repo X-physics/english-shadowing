@@ -280,11 +280,20 @@ def get_youtube_title(video_id):
 
 def _get_yt_transcript_scraperapi(video_id, api_key):
     """Fetch YouTube transcript via ScraperAPI REST endpoint.
-    Uses direct HTTP requests to api.scraperapi.com instead of proxy mode,
-    which avoids HTTP CONNECT / 407 authentication issues entirely.
+
+    Strategy:
+      - Use ScraperAPI to fetch the video HTML page (IP-blocked on Railway).
+      - Fetch the caption file DIRECTLY without ScraperAPI (YouTube's timedtext
+        endpoint is much less restricted and returns empty via ScraperAPI).
     """
     import requests as req
     import json
+
+    BROWSER_UA = (
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+        'AppleWebKit/537.36 (KHTML, like Gecko) '
+        'Chrome/124.0.0.0 Safari/537.36'
+    )
 
     def sa_fetch(url):
         r = req.get(
@@ -295,18 +304,32 @@ def _get_yt_transcript_scraperapi(video_id, api_key):
         r.raise_for_status()
         return r
 
-    # 1. Fetch the video page
-    page = sa_fetch(f'https://www.youtube.com/watch?v={video_id}').text
+    def direct_fetch(url):
+        r = req.get(url, headers={'User-Agent': BROWSER_UA}, timeout=15)
+        r.raise_for_status()
+        return r
 
-    # 2. Extract ytInitialPlayerResponse JSON embedded in the page
+    # 1. Fetch the video page via ScraperAPI (bypasses Railway IP block)
+    resp = sa_fetch(f'https://www.youtube.com/watch?v={video_id}')
+    page = resp.text
+    if len(page) < 500:
+        raise Exception(
+            f'ScraperAPI 返回内容过短（{len(page)} 字节），'
+            '请确认 API Key 正确且账户有剩余额度'
+        )
+
+    # 2. Extract ytInitialPlayerResponse JSON
     m = re.search(r'ytInitialPlayerResponse\s*=\s*', page)
     if not m:
-        raise Exception('无法解析视频页面，请稍后重试')
+        raise Exception(
+            '视频页面中未找到字幕数据。'
+            'ScraperAPI 可能返回了验证页面，请稍后重试'
+        )
     decoder = json.JSONDecoder()
     try:
         player_data, _ = decoder.raw_decode(page, m.end())
-    except Exception:
-        raise Exception('无法解析视频数据')
+    except Exception as e:
+        raise Exception(f'无法解析视频数据：{e}')
 
     tracks = (player_data
               .get('captions', {})
@@ -333,8 +356,14 @@ def _get_yt_transcript_scraperapi(video_id, api_key):
     if 'fmt=' not in caption_url:
         caption_url += '&fmt=json3'
 
-    # 4. Fetch caption data
-    events = sa_fetch(caption_url).json().get('events', [])
+    # 4. Fetch caption JSON DIRECTLY (timedtext API doesn't need ScraperAPI)
+    try:
+        cap_resp = direct_fetch(caption_url)
+        events = cap_resp.json().get('events', [])
+    except Exception:
+        # Last resort: try via ScraperAPI
+        events = sa_fetch(caption_url).json().get('events', [])
+
     segments = []
     for e in events:
         if 'segs' not in e:
