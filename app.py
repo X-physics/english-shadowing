@@ -122,47 +122,117 @@ def translate_texts(texts, source='en', target='zh-CN'):
         return [''] * len(texts)
 
 
+# ── Bilibili WBI signature ────────────────────────────────────────────────────
+# Bilibili's newer API endpoints require a signed "w_rid" parameter.
+# Reference: https://socialsisteryi.github.io/bilibili-API-collect/docs/misc/sign/wbi.html
+
+import hashlib
+import time
+from urllib.parse import urlencode
+
+_WBI_MIXIN_KEY_ENC_TAB = [
+    46, 47, 18,  2, 53,  8, 23, 32, 15, 50, 10, 31, 58,  3, 45, 35,
+    27, 43,  5, 49, 33,  9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13,
+    37, 48,  7, 16, 24, 55, 40, 61, 26, 17,  0,  1, 60, 51, 30,  4,
+    22, 25, 54, 21, 56, 59,  6, 63, 57, 62, 11, 36, 20, 34, 44, 52,
+]
+
+def _get_mixin_key(raw: str) -> str:
+    return ''.join(raw[i] for i in _WBI_MIXIN_KEY_ENC_TAB)[:32]
+
+def _wbi_sign(params: dict, img_key: str, sub_key: str) -> dict:
+    """Add wts + w_rid to params and return the signed dict."""
+    mixin_key = _get_mixin_key(img_key + sub_key)
+    params = dict(params)
+    params['wts'] = int(time.time())
+    # Sort and strip forbidden chars
+    params = {
+        k: ''.join(c for c in str(v) if c not in "!'()*")
+        for k, v in sorted(params.items())
+    }
+    query = urlencode(params)
+    params['w_rid'] = hashlib.md5((query + mixin_key).encode()).hexdigest()
+    return params
+
+def _fetch_wbi_keys(session) -> tuple:
+    """Return (img_key, sub_key) from Bilibili nav API."""
+    nav = session.get(
+        'https://api.bilibili.com/x/web-interface/nav',
+        timeout=8
+    ).json()
+    wbi = nav.get('data', {}).get('wbi_img', {})
+    def _stem(url):
+        return url.rsplit('/', 1)[-1].split('.')[0]
+    return _stem(wbi.get('img_url', '')), _stem(wbi.get('sub_url', ''))
+
+
 # ── Bilibili subtitle fetcher ─────────────────────────────────────────────────
 
 def get_bilibili_transcript(bvid):
-    """Return (segments, source_lang).
-    segments = list of {text, start, duration}
-    source_lang = 'zh' or 'en'
+    """Return (segments, source_lang, title).
+    Tries unsigned player/v2 first, then WBI-signed player/wbi/v2 as fallback.
     """
     import requests as req
-    headers = {
+
+    session = req.Session()
+    session.headers.update({
         'User-Agent': (
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
             'AppleWebKit/537.36 (KHTML, like Gecko) '
             'Chrome/124.0.0.0 Safari/537.36'
         ),
         'Referer': 'https://www.bilibili.com',
-    }
+    })
 
-    # 1. Get video info (cid)
-    info = req.get(
+    # 1. Get video info (cid + title)
+    info = session.get(
         f'https://api.bilibili.com/x/web-interface/view?bvid={bvid}',
-        headers=headers, timeout=10
+        timeout=10
     ).json()
     if info.get('code') != 0:
         raise Exception(f'获取视频信息失败：{info.get("message", "未知错误")}')
-    cid = info['data']['cid']
+    cid   = info['data']['cid']
+    title = info['data'].get('title', bvid)
 
-    # 2. Get subtitle list
-    player = req.get(
-        f'https://api.bilibili.com/x/player/v2?bvid={bvid}&cid={cid}',
-        headers=headers, timeout=10
-    ).json()
-    subtitles = player.get('data', {}).get('subtitle', {}).get('subtitles', [])
+    # 2a. Try unsigned player/v2 first (works for some videos)
+    subtitles = []
+    try:
+        r = session.get(
+            f'https://api.bilibili.com/x/player/v2?bvid={bvid}&cid={cid}',
+            timeout=10
+        ).json()
+        subtitles = r.get('data', {}).get('subtitle', {}).get('subtitles', [])
+    except Exception:
+        pass
+
+    # 2b. Fallback: WBI-signed player/wbi/v2
     if not subtitles:
-        raise Exception('该视频没有字幕，请选择有 CC 字幕的视频')
+        try:
+            img_key, sub_key = _fetch_wbi_keys(session)
+            if img_key and sub_key:
+                signed = _wbi_sign({'bvid': bvid, 'cid': cid}, img_key, sub_key)
+                r2 = session.get(
+                    'https://api.bilibili.com/x/player/wbi/v2',
+                    params=signed, timeout=10
+                ).json()
+                subtitles = r2.get('data', {}).get('subtitle', {}).get('subtitles', [])
+        except Exception:
+            pass
 
-    # 3. Choose: prefer English, then Chinese AI, then Chinese, then first
+    if not subtitles:
+        raise Exception(
+            '该视频没有字幕轨道。\n'
+            '请确认：① 视频播放器里点击「字幕」按钮能看到字幕；'
+            '② 字幕不是烧录在画面上的硬字幕。'
+        )
+
+    # 3. Choose best track: prefer English > AI-English > AI-Chinese > Chinese
     priority = ['en', 'en-US', 'en-GB', 'ai-en', 'ai-zh', 'zh-CN', 'zh-Hans', 'zh']
     chosen = None
     for lang_pref in priority:
         for sub in subtitles:
-            if sub['lan'] == lang_pref or sub['lan'].startswith(lang_pref):
+            lan = sub.get('lan', '')
+            if lan == lang_pref or lan.startswith(lang_pref):
                 chosen = sub
                 break
         if chosen:
@@ -170,13 +240,15 @@ def get_bilibili_transcript(bvid):
     if not chosen:
         chosen = subtitles[0]
 
-    source_lang = 'zh' if chosen['lan'].startswith(('zh', 'ai-zh')) else 'en'
-    sub_url = chosen['subtitle_url']
+    source_lang = 'zh' if chosen.get('lan', '').startswith(('zh', 'ai-zh')) else 'en'
+    sub_url = chosen.get('subtitle_url', '')
     if sub_url.startswith('//'):
         sub_url = 'https:' + sub_url
+    if not sub_url:
+        raise Exception('字幕地址为空，无法下载字幕')
 
     # 4. Download subtitle JSON
-    body = req.get(sub_url, headers=headers, timeout=10).json().get('body', [])
+    body = session.get(sub_url, timeout=10).json().get('body', [])
     if not body:
         raise Exception('字幕内容为空')
 
@@ -188,7 +260,6 @@ def get_bilibili_transcript(bvid):
         }
         for item in body
     ]
-    title = info['data'].get('title', bvid)
     return segments, source_lang, title
 
 
@@ -203,6 +274,48 @@ def get_youtube_title(video_id):
         return resp.json().get('title', video_id)
     except Exception:
         return video_id
+
+
+# ── YouTube API builder (proxy support for Railway deployment) ────────────────
+
+def _build_yt_api():
+    """Return a YouTubeTranscriptApi instance, optionally configured with a proxy.
+
+    Priority:
+      1. ScraperAPI  – set SCRAPERAPI_KEY env var (free tier: scraperapi.com)
+      2. Webshare    – set WEBSHARE_PROXY_USERNAME + WEBSHARE_PROXY_PASSWORD
+      3. No proxy    – local development / environments with clean IPs
+    """
+    from youtube_transcript_api import YouTubeTranscriptApi
+
+    # ── Option 1: ScraperAPI residential proxy ────────────────────────────────
+    scraper_key = os.environ.get('SCRAPERAPI_KEY', '').strip()
+    if scraper_key:
+        try:
+            from youtube_transcript_api.proxies import GenericProxyConfig
+            proxy_url = f'http://scraperapi:{scraper_key}@proxy-server.scraperapi.com:8001'
+            return YouTubeTranscriptApi(proxy_config=GenericProxyConfig(
+                http_url=proxy_url,
+                https_url=proxy_url,
+            ))
+        except Exception:
+            pass  # fall through to next option
+
+    # ── Option 2: Webshare residential proxy ─────────────────────────────────
+    proxy_user = os.environ.get('WEBSHARE_PROXY_USERNAME', '').strip()
+    proxy_pass = os.environ.get('WEBSHARE_PROXY_PASSWORD', '').strip()
+    if proxy_user and proxy_pass:
+        try:
+            from youtube_transcript_api.proxies import WebshareProxyConfig
+            return YouTubeTranscriptApi(proxy_config=WebshareProxyConfig(
+                proxy_username=proxy_user,
+                proxy_password=proxy_pass,
+            ))
+        except Exception:
+            pass  # fall through to no-proxy fallback
+
+    # ── Option 3: No proxy (local dev or clean-IP host) ───────────────────────
+    return YouTubeTranscriptApi()
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -266,16 +379,7 @@ def get_transcript():
         from youtube_transcript_api import YouTubeTranscriptApi
         from youtube_transcript_api._errors import NoTranscriptFound, TranscriptsDisabled
 
-        proxy_user = os.environ.get('WEBSHARE_PROXY_USERNAME')
-        proxy_pass = os.environ.get('WEBSHARE_PROXY_PASSWORD')
-        if proxy_user and proxy_pass:
-            from youtube_transcript_api.proxies import WebshareProxyConfig
-            api = YouTubeTranscriptApi(proxy_config=WebshareProxyConfig(
-                proxy_username=proxy_user,
-                proxy_password=proxy_pass,
-            ))
-        else:
-            api = YouTubeTranscriptApi()
+        api = _build_yt_api()
 
         raw = None
         try:
