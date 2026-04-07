@@ -278,6 +278,22 @@ def get_youtube_title(video_id):
 
 # ── YouTube API builder (proxy support for Railway deployment) ────────────────
 
+class _NoVerifyProxyConfig:
+    """GenericProxyConfig equivalent that also disables SSL verification.
+    Needed when ScraperAPI (or any MITM proxy) intercepts HTTPS traffic and
+    presents its own certificate — which Python's default CA bundle rejects.
+    """
+    def __init__(self, http_url: str, https_url: str):
+        self._http = http_url
+        self._https = https_url
+
+    def __call__(self) -> dict:
+        return {
+            'proxies': {'http': self._http, 'https': self._https},
+            'verify': False,
+        }
+
+
 def _build_yt_api():
     """Return a YouTubeTranscriptApi instance, optionally configured with a proxy.
 
@@ -286,15 +302,16 @@ def _build_yt_api():
       2. Webshare    – set WEBSHARE_PROXY_USERNAME + WEBSHARE_PROXY_PASSWORD
       3. No proxy    – local development / environments with clean IPs
     """
+    import urllib3
     from youtube_transcript_api import YouTubeTranscriptApi
 
     # ── Option 1: ScraperAPI residential proxy ────────────────────────────────
     scraper_key = os.environ.get('SCRAPERAPI_KEY', '').strip()
     if scraper_key:
         try:
-            from youtube_transcript_api.proxies import GenericProxyConfig
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
             proxy_url = f'http://scraperapi:{scraper_key}@proxy-server.scraperapi.com:8001'
-            return YouTubeTranscriptApi(proxy_config=GenericProxyConfig(
+            return YouTubeTranscriptApi(proxy_config=_NoVerifyProxyConfig(
                 http_url=proxy_url,
                 https_url=proxy_url,
             ))
