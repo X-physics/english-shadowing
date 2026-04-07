@@ -65,11 +65,53 @@ function toggleFav() {
   if (!currentVideoMeta) return;
   let favs = loadFavs();
   const idx = favs.findIndex(f => f.url === currentVideoMeta.url);
-  if (idx >= 0) favs.splice(idx, 1);
-  else favs.unshift(currentVideoMeta);
+  if (idx >= 0) {
+    favs.splice(idx, 1);
+    showToast('已移除收藏');
+  } else {
+    favs.unshift(currentVideoMeta);
+    showToast('❤️ 已加入收藏');
+  }
   saveFavs(favs);
   syncFavBtn();
-  if (document.getElementById('panelFavs').classList.contains('open')) renderFavList();
+  if (document.getElementById('panelFavs')?.classList.contains('open')) renderFavList();
+}
+
+/* ══════════════════════════════════════════
+   PAGE NAVIGATION (Home ↔ Player)
+   ══════════════════════════════════════════ */
+function showHome() {
+  // Pause video before leaving player page
+  clearSegmentTimer();
+  stopSync();
+  if (platform === 'youtube' && player && player.pauseVideo) {
+    try { player.pauseVideo(); } catch (_) {}
+  } else if (platform === 'bilibili') {
+    try {
+      document.getElementById('bilibiliPlayer')
+        ?.contentWindow?.postMessage(JSON.stringify({ type: 'pause' }), '*');
+    } catch (_) {}
+  }
+
+  document.getElementById('homePage').classList.remove('hidden');
+  document.getElementById('playerPage').classList.add('hidden');
+  document.getElementById('app').className = 'app home-mode';
+  document.body.style.overflow = '';
+  renderHomeGrid();
+  renderRecentSection();
+  renderFavHomeSection();
+}
+
+function showPlayer() {
+  document.getElementById('homePage').classList.add('hidden');
+  document.getElementById('playerPage').classList.remove('hidden');
+  document.getElementById('app').className = 'app player-mode';
+  document.body.style.overflow = 'hidden';
+  // Sync topbar title if video already loaded
+  if (currentVideoMeta?.title) {
+    const t = document.getElementById('topbarTitle');
+    if (t) t.textContent = currentVideoMeta.title;
+  }
 }
 
 /* ── Side Drawer ── */
@@ -86,8 +128,7 @@ function openSidePanel(name) {
   document.querySelector(`.side-tab[data-panel="${name}"]`)?.classList.add('active');
   document.getElementById('drawerBackdrop')?.classList.remove('hidden');
 
-  if (name === 'featured') renderFeaturedList();
-  if (name === 'favs')     renderFavList();
+  if (name === 'favs') renderFavList();
 }
 
 function closeSidePanel(name) {
@@ -105,14 +146,163 @@ function toggleSidePanel(name) {
 
 function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
-/* ── Featured Videos ── */
+/* ── Featured Videos (expanded, categorized) ── */
 const FEATURED_VIDEOS = [
-  { url: 'https://www.youtube.com/watch?v=o-Bcl93OnU0', title: 'English Conversation Practice', tag: 'YouTube · 英语对话' },
-  { url: 'https://www.youtube.com/watch?v=LeqjcafMu9o', title: 'English Listening & Speaking',  tag: 'YouTube · 听说训练' },
-  { url: 'https://www.youtube.com/watch?v=HluANRwPyNo', title: 'TED · Do schools kill creativity?', tag: 'YouTube · TED 演讲' },
-  { url: 'https://www.youtube.com/watch?v=8S0FDjFBj8o', title: 'BBC Learning English – 6 Minute English', tag: 'YouTube · BBC 英语' },
-  { url: 'https://www.youtube.com/watch?v=arj7oStGLkU', title: 'TED · Inside the mind of a master procrastinator', tag: 'YouTube · TED 演讲' },
+  // TED演讲
+  { url: 'https://www.youtube.com/watch?v=HluANRwPyNo',
+    title: '学校扼杀了创造力吗？',
+    author: 'Sir Ken Robinson · TED2006', cat: 'ted' },
+  { url: 'https://www.youtube.com/watch?v=arj7oStGLkU',
+    title: '拖延症患者的内心世界',
+    author: 'Tim Urban · TED2016', cat: 'ted' },
+  { url: 'https://www.youtube.com/watch?v=8mwavUop1XE',
+    title: '内向者的力量',
+    author: 'Susan Cain · TED2012', cat: 'ted' },
+  { url: 'https://www.youtube.com/watch?v=iCvmsMzlF7o',
+    title: '脆弱的力量',
+    author: 'Brené Brown · TEDxHouston', cat: 'ted' },
+  { url: 'https://www.youtube.com/watch?v=qp0HIF3SfI4',
+    title: '伟大领袖如何激励行动',
+    author: 'Simon Sinek · TEDxPugetSound', cat: 'ted' },
+  { url: 'https://www.youtube.com/watch?v=ReRcHdeUG9Y',
+    title: '如何拥有更好的对话',
+    author: 'Celeste Headlee · TEDxCreativeCoast', cat: 'ted' },
+
+  // 英语学习
+  { url: 'https://www.youtube.com/watch?v=8S0FDjFBj8o',
+    title: '6 Minute English',
+    author: 'BBC Learning English', cat: 'learn' },
+  { url: 'https://www.youtube.com/watch?v=o-Bcl93OnU0',
+    title: 'English Conversation Practice',
+    author: 'Learn English with TV Series', cat: 'learn' },
+  { url: 'https://www.youtube.com/watch?v=LeqjcafMu9o',
+    title: 'English Listening & Speaking',
+    author: 'EnglishClass101', cat: 'learn' },
+
+  // 生活
+  { url: 'https://www.youtube.com/watch?v=H14bBuluwB8',
+    title: '睡眠的科学：为什么好好睡觉这么重要',
+    author: 'Matt Walker · TED', cat: 'life' },
+  { url: 'https://www.youtube.com/watch?v=lmyZMtPVodo',
+    title: '如何与压力做朋友',
+    author: 'Kelly McGonigal · TED', cat: 'life' },
+
+  // 旅行
+  { url: 'https://www.youtube.com/watch?v=kN2vXCMmUBo',
+    title: '旅行能教给你的那些事',
+    author: 'Rick Steves · TED', cat: 'travel' },
+
+  // 商务
+  { url: 'https://www.youtube.com/watch?v=Unzc731iCUY',
+    title: '如何与人交谈：职场沟通技巧',
+    author: 'MIT OpenCourseWare', cat: 'biz' },
+
+  // 科技
+  { url: 'https://www.youtube.com/watch?v=UF8uR6Z6KLc',
+    title: '乔布斯斯坦福演讲：Stay Hungry, Stay Foolish',
+    author: 'Steve Jobs · Stanford 2005', cat: 'sci' },
+  { url: 'https://www.youtube.com/watch?v=W3I3kAg2J7w',
+    title: '互联网如何改变了世界',
+    author: 'Andrew Blum · TED', cat: 'sci' },
 ];
+
+/* ── Category config ── */
+const CAT_CONFIG = {
+  ted:    { label: 'TED演讲',  color: '#E63946' },
+  learn:  { label: '英语学习', color: '#0071E3' },
+  life:   { label: '生活',     color: '#FF9F0A' },
+  travel: { label: '旅行',     color: '#34C759' },
+  biz:    { label: '商务',     color: '#AF52DE' },
+  sci:    { label: '科技',     color: '#5AC8FA' },
+  recent: { label: '最近观看', color: '#6E6E73' },
+};
+
+/* ── Recent videos (localStorage) ── */
+const RECENT_KEY = 'recentVideos';
+function getRecent() {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); } catch { return []; }
+}
+function addToRecent(meta) {
+  let r = getRecent().filter(v => v.url !== meta.url);
+  r.unshift({ url: meta.url, title: meta.title, platform: meta.platform,
+              video_id: meta.video_id, cat: 'recent', author: '' });
+  localStorage.setItem(RECENT_KEY, JSON.stringify(r.slice(0, 6)));
+}
+function clearRecent() {
+  localStorage.removeItem(RECENT_KEY);
+  document.getElementById('recentSection')?.classList.add('hidden');
+}
+
+/* ── Build a featured card ── */
+function makeFeatCard(v) {
+  const thumb = ytThumb(v.url);
+  const cfg   = CAT_CONFIG[v.cat] || {};
+  const badge = cfg.label
+    ? `<span class="feat-cat-badge" style="background:${cfg.color}">${cfg.label}</span>`
+    : '';
+  const src = (v.platform === 'bilibili') ? '📺 Bilibili' : '▶️ YouTube';
+  return `
+    <div class="feat-card" data-url="${esc(v.url)}">
+      <div class="feat-thumb-wrap">
+        <img class="feat-thumb" src="${thumb}" alt="${esc(v.title)}" loading="lazy"
+             onerror="this.style.opacity=0" />
+        <div class="feat-play-overlay">
+          <div class="feat-play-icon">▶</div>
+          <span>开始练习</span>
+        </div>
+        ${badge}
+      </div>
+      <div class="feat-info">
+        <div class="feat-title">${esc(v.title)}</div>
+        <div class="feat-meta">
+          <span class="feat-author">${esc(v.author || '')}</span>
+          <span class="feat-source">${src}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
+/* ── Home grid state ── */
+let activeCat = 'all';
+
+function renderHomeGrid() {
+  const grid = document.getElementById('featuredGrid');
+  if (!grid) return;
+  const list = activeCat === 'all'
+    ? FEATURED_VIDEOS
+    : FEATURED_VIDEOS.filter(v => v.cat === activeCat);
+  grid.innerHTML = list.length
+    ? list.map(makeFeatCard).join('')
+    : '<div class="feat-empty">该分类暂无视频，敬请期待 ✨</div>';
+}
+
+function renderRecentSection() {
+  const recent = getRecent();
+  const sec  = document.getElementById('recentSection');
+  const grid = document.getElementById('recentGrid');
+  if (!sec || !grid) return;
+  if (!recent.length) { sec.classList.add('hidden'); return; }
+  sec.classList.remove('hidden');
+  grid.innerHTML = recent.map(makeFeatCard).join('');
+}
+
+function renderFavHomeSection() {
+  const favs = loadFavs();
+  const sec  = document.getElementById('favSection');
+  const grid = document.getElementById('favHomeGrid');
+  if (!sec || !grid) return;
+  if (!favs.length) { sec.classList.add('hidden'); return; }
+  sec.classList.remove('hidden');
+  grid.innerHTML = favs.map(v => makeFeatCard({ ...v, cat: 'recent' })).join('');
+}
+
+/* ── Load video from a URL (shared between home & player) ── */
+function loadFromUrl(url) {
+  if (!url) return;
+  document.getElementById('videoUrl').value = url;
+  showPlayer();
+  loadVideo();
+}
 
 function ytThumb(url) {
   const m = url.match(/(?:v=|youtu\.be\/)([^&?#\s]{11})/);
@@ -162,6 +352,16 @@ let favorites = new Set();
 let shadowTarget = null;
 let recognition = null;
 let isRecording = false;
+let loopCount = 1;             // how many times to play sentence before recording
+let autoAdvanceTimer = null;
+let autoAdvanceInterval = null;
+let starredSentences = {};     // { sentenceIdx: true } — persisted per video
+let activeFilterChip = 'all';  // 'all' | 'starred' | 'unpracticed' | 'low'
+
+// Audio level meter
+let meterStream = null;
+let meterCtx    = null;
+let meterFrame  = null;
 
 /* ── Helpers ── */
 function fmt(sec) {
@@ -267,7 +467,7 @@ async function loadVideo() {
   loadBtn.textContent = '加载中…';
   loading.classList.remove('hidden');
   vidSec.classList.add('hidden');
-  list.innerHTML = '';
+  showSkeletons(list);
 
   try {
     const res  = await fetch(`/api/transcript?url=${encodeURIComponent(url)}`);
@@ -278,7 +478,12 @@ async function loadVideo() {
     transcript    = data.transcript;
     platform      = data.platform || 'youtube';
     currentVideoId = data.video_id;
-    practiceScores = loadScores(data.video_id);
+    practiceScores    = loadScores(data.video_id);
+    starredSentences  = loadStars(data.video_id);
+    activeFilterChip  = 'all';
+    document.querySelectorAll('.chip').forEach(c =>
+      c.classList.toggle('active', c.dataset.filter === 'all'));
+    document.getElementById('filterChips')?.classList.remove('hidden');
 
     // Show control bar and reset speed to 1x
     document.getElementById('controlBar').classList.remove('hidden');
@@ -295,6 +500,16 @@ async function loadVideo() {
     };
     document.getElementById('favBtn').classList.remove('hidden');
     syncFavBtn();
+
+    // Hide empty state
+    document.getElementById('leftEmpty').classList.add('hidden');
+    // Update topbar title to video name
+    const topbarTitle = document.getElementById('topbarTitle');
+    if (topbarTitle) topbarTitle.textContent = data.title || '语镜';
+
+    // Persist last watched URL + add to recent history
+    saveLastUrl(url);
+    addToRecent(currentVideoMeta);
 
     // Close any open side panel when video loads
     if (activePanel) closeSidePanel(activePanel);
@@ -320,6 +535,227 @@ function showError(msg, listEl) {
   listEl.innerHTML = `<div class="error-msg">${esc(msg)}</div>`;
 }
 
+/* ── Skeleton loading cards ── */
+function showSkeletons(listEl) {
+  listEl.innerHTML = Array.from({ length: 6 }, () => `
+    <div class="skeleton-card">
+      <div class="skel skel-s" style="margin-bottom:2px"></div>
+      <div class="skel skel-l"></div>
+      <div class="skel skel-m"></div>
+      <div class="skel skel-xs"></div>
+    </div>`).join('');
+}
+
+/* ── Search filter (delegates to unified applyFilters) ── */
+function filterCards() { applyFilters(); }
+
+/* ── Play sentence N times ── */
+function playNTimes(n, start, duration, onDone) {
+  if (n <= 0) { if (onDone) onDone(); return; }
+  seekAndPlay(start, duration);
+  setTimeout(() => playNTimes(n - 1, start, duration, onDone), (duration + 0.6) * 1000);
+}
+
+/* ── Auto-advance after scoring ── */
+function startAutoAdvance() {
+  cancelAutoAdvance();
+  const sentenceIdx = transcript.indexOf(shadowTarget);
+  if (sentenceIdx < 0 || sentenceIdx >= transcript.length - 1) return; // no next
+  const bar  = document.getElementById('autoAdvanceBar');
+  const fill = document.getElementById('autoAdvanceFill');
+  const text = document.getElementById('autoAdvanceText');
+  bar.classList.remove('hidden');
+  const totalMs = 3000;
+  const startTime = Date.now();
+  fill.style.width = '100%';
+  autoAdvanceInterval = setInterval(() => {
+    const elapsed = Date.now() - startTime;
+    const remaining = Math.max(0, totalMs - elapsed);
+    fill.style.width = ((remaining / totalMs) * 100) + '%';
+    text.textContent = `${Math.ceil(remaining / 1000)} 秒后自动下一句`;
+    if (elapsed >= totalMs) {
+      cancelAutoAdvance();
+      goNextSentence();
+    }
+  }, 50);
+}
+
+function cancelAutoAdvance() {
+  if (autoAdvanceInterval) { clearInterval(autoAdvanceInterval); autoAdvanceInterval = null; }
+  document.getElementById('autoAdvanceBar')?.classList.add('hidden');
+}
+
+function goNextSentence() {
+  const sentenceIdx = transcript.indexOf(shadowTarget);
+  const nextIdx = sentenceIdx + 1;
+  if (nextIdx < transcript.length) openShadow(nextIdx);
+  else closeShadow();
+}
+
+/* ── Confetti ── */
+function fireConfetti() {
+  let canvas = document.getElementById('confettiCanvas');
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = 'confettiCanvas';
+    document.body.appendChild(canvas);
+  }
+  canvas.width  = window.innerWidth;
+  canvas.height = window.innerHeight;
+  const ctx = canvas.getContext('2d');
+  const colors = ['#34C759','#0071E3','#FF9F0A','#FF3B30','#AF52DE','#5AC8FA','#FFD60A'];
+  const particles = Array.from({ length: 90 }, () => ({
+    x:  Math.random() * canvas.width,
+    y: -10 - Math.random() * 120,
+    vx: (Math.random() - 0.5) * 4,
+    vy: 2 + Math.random() * 3.5,
+    r: 4 + Math.random() * 5,
+    color: colors[Math.floor(Math.random() * colors.length)],
+    angle: Math.random() * Math.PI * 2,
+    va: (Math.random() - 0.5) * 0.25,
+    opacity: 1,
+  }));
+  let frame;
+  const deadline = Date.now() + 4000;
+  function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    let alive = false;
+    particles.forEach(p => {
+      p.x += p.vx; p.y += p.vy; p.vy += 0.07; p.angle += p.va;
+      if (p.y < canvas.height + 20) alive = true;
+      if (p.y > canvas.height - 80) p.opacity = Math.max(0, p.opacity - 0.025);
+      ctx.save();
+      ctx.translate(p.x, p.y); ctx.rotate(p.angle);
+      ctx.globalAlpha = p.opacity;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.r / 2, -p.r / 2, p.r, p.r * 1.7);
+      ctx.restore();
+    });
+    if (alive && Date.now() < deadline) {
+      frame = requestAnimationFrame(animate);
+    } else {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (canvas.parentNode) canvas.remove();
+    }
+  }
+  frame = requestAnimationFrame(animate);
+}
+
+/* ── Toast notification ── */
+let toastTimer = null;
+function showToast(msg, duration = 2000) {
+  let el = document.getElementById('appToast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'appToast';
+    el.className = 'toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+/* ── TTS word pronunciation ── */
+function speakWord(text, el) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utt = new SpeechSynthesisUtterance(text.replace(/[^a-zA-Z'\-]/g, ''));
+  utt.lang = 'en-US';
+  utt.rate = 0.82;
+  if (el) {
+    document.querySelectorAll('.tts-word.speaking').forEach(w => w.classList.remove('speaking'));
+    el.classList.add('speaking');
+    utt.onend = () => el.classList.remove('speaking');
+    utt.onerror = () => el.classList.remove('speaking');
+  }
+  window.speechSynthesis.speak(utt);
+}
+
+/* ── Last session persistence ── */
+const LAST_URL_KEY = 'lastVideoUrl';
+function saveLastUrl(url) {
+  try { localStorage.setItem(LAST_URL_KEY, url); } catch (_) {}
+}
+function loadLastUrl() {
+  try { return localStorage.getItem(LAST_URL_KEY) || ''; } catch (_) { return ''; }
+}
+
+/* ── Starred sentences (per video, localStorage) ── */
+function starKey(videoId) { return `stars_${videoId}`; }
+function loadStars(videoId) {
+  try { return JSON.parse(localStorage.getItem(starKey(videoId)) || '{}'); }
+  catch { return {}; }
+}
+function saveStars() {
+  localStorage.setItem(starKey(currentVideoId), JSON.stringify(starredSentences));
+}
+
+/* ── Unified filter (text search + chip) ── */
+function applyFilters() {
+  const q = (document.getElementById('searchInput')?.value || '').toLowerCase().trim();
+  document.querySelectorAll('.sentence-card').forEach(card => {
+    const idx  = +card.dataset.idx;
+    const item = transcript[idx];
+    if (!item) { card.style.display = 'none'; return; }
+    const matchText = !q ||
+      item.english.toLowerCase().includes(q) ||
+      (item.chinese && item.chinese.toLowerCase().includes(q));
+    let matchChip = true;
+    if (activeFilterChip === 'starred')     matchChip = !!starredSentences[idx];
+    if (activeFilterChip === 'unpracticed') matchChip = practiceScores[idx] === undefined;
+    if (activeFilterChip === 'low')         matchChip = practiceScores[idx] !== undefined && practiceScores[idx] < 60;
+    card.style.display = (matchText && matchChip) ? '' : 'none';
+  });
+}
+
+/* ── Audio level meter ── */
+async function startMeter() {
+  stopMeter();
+  try {
+    meterStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    meterCtx    = new (window.AudioContext || window.webkitAudioContext)();
+    const src   = meterCtx.createMediaStreamSource(meterStream);
+    const analyser = meterCtx.createAnalyser();
+    analyser.fftSize = 128;
+    src.connect(analyser);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const fill = document.getElementById('audioMeterFill');
+    const bar  = document.getElementById('audioMeter');
+    if (bar) bar.classList.remove('hidden');
+    const tick = () => {
+      analyser.getByteFrequencyData(data);
+      const avg = data.reduce((s, v) => s + v, 0) / data.length;
+      const pct = Math.min(100, (avg / 80) * 100);
+      if (fill) fill.style.width = pct + '%';
+      meterFrame = requestAnimationFrame(tick);
+    };
+    tick();
+  } catch (_) { /* mic already in use or denied — degrade gracefully */ }
+}
+
+function stopMeter() {
+  if (meterFrame) { cancelAnimationFrame(meterFrame); meterFrame = null; }
+  if (meterCtx)   { meterCtx.close().catch(() => {}); meterCtx = null; }
+  if (meterStream){ meterStream.getTracks().forEach(t => t.stop()); meterStream = null; }
+  const bar = document.getElementById('audioMeter');
+  if (bar) {
+    document.getElementById('audioMeterFill').style.width = '0%';
+    bar.classList.add('hidden');
+  }
+}
+
+/* ── Modal sentence position + navigation ── */
+function updateSentencePos(idx) {
+  const pos  = document.getElementById('sentencePos');
+  const prev = document.getElementById('prevSentenceBtn');
+  const next = document.getElementById('nextSentenceNavBtn');
+  if (pos)  pos.textContent = `${idx + 1} / ${transcript.length}`;
+  if (prev) prev.disabled = idx <= 0;
+  if (next) next.disabled = idx >= transcript.length - 1;
+}
+
 /* ── Render sentence cards ── */
 function renderCards(listEl) {
   listEl.innerHTML = '';
@@ -339,7 +775,7 @@ function renderCards(listEl) {
         <span class="ts"><span class="card-num">${idx + 1}</span>${fmt(item.start)}</span>
         <div style="display:flex;align-items:center;gap:6px">
           ${badgeHtml}
-          <button class="star-btn" data-idx="${idx}" title="收藏">☆</button>
+          <button class="star-btn ${starredSentences[idx] ? 'starred' : ''}" data-idx="${idx}" title="收藏">${starredSentences[idx] ? '★' : '☆'}</button>
         </div>
       </div>
       <div class="en-text">${esc(item.english)}</div>
@@ -354,6 +790,11 @@ function renderCards(listEl) {
           跟读
         </button>
       </div>`;
+
+    // Stagger entrance animation for the first 20 cards
+    if (idx < 20) {
+      card.style.animation = `cardEnter .35s ${idx * 40}ms both cubic-bezier(.4,0,.2,1)`;
+    }
 
     card.addEventListener('click', e => {
       if (e.target.closest('button')) return;
@@ -434,21 +875,31 @@ function seekAndPlay(start, duration) {
 }
 
 function toggleStar(idx, btn) {
-  if (favorites.has(idx)) {
-    favorites.delete(idx);
+  if (starredSentences[idx]) {
+    delete starredSentences[idx];
     btn.textContent = '☆';
     btn.classList.remove('starred');
   } else {
-    favorites.add(idx);
+    starredSentences[idx] = true;
     btn.textContent = '★';
     btn.classList.add('starred');
   }
+  saveStars();
+  // Re-apply filters so starred chip updates live
+  if (activeFilterChip !== 'all') applyFilters();
 }
 
 /* ── Shadowing Modal ── */
 function openShadow(idx) {
   shadowTarget = transcript[idx];
-  document.getElementById('modalEnglish').textContent = shadowTarget.english;
+
+  // Render English text with per-word TTS spans
+  const words = shadowTarget.english.trim().split(/(\s+)/);
+  document.getElementById('modalEnglish').innerHTML = words
+    .map(chunk => chunk.match(/^\s+$/)
+      ? chunk
+      : `<span class="tts-word">${esc(chunk)}</span>`)
+    .join('');
   document.getElementById('modalChinese').textContent = shadowTarget.chinese;
   document.getElementById('resultBox').classList.add('hidden');
   document.getElementById('recordStatus').textContent = '';
@@ -469,11 +920,14 @@ function openShadow(idx) {
     overlay.classList.remove('desktop-modal');
   }
 
+  updateSentencePos(idx);
+  cancelAutoAdvance();
   overlay.classList.add('open');
-  seekAndPlay(shadowTarget.start, shadowTarget.duration);
+  playNTimes(loopCount, shadowTarget.start, shadowTarget.duration);
 }
 
 function closeShadow() {
+  cancelAutoAdvance();
   const overlay = document.getElementById('shadowModal');
   overlay.classList.remove('open', 'desktop-modal');
   overlay.style.cssText = '';
@@ -482,7 +936,7 @@ function closeShadow() {
 }
 
 function listenAgain() {
-  if (shadowTarget) seekAndPlay(shadowTarget.start, shadowTarget.duration);
+  if (shadowTarget) playNTimes(loopCount, shadowTarget.start, shadowTarget.duration);
 }
 
 /* ── Recording & Speech Recognition ── */
@@ -579,6 +1033,7 @@ function toggleRecord() {
         }
       }, 1000);
 
+      startMeter();
       setTimeout(() => spawnRec(btn, status), 200);
     }
   }, 1000);
@@ -644,6 +1099,7 @@ function spawnRec(btn, status) {
     recordingActive = false;
     isRecording = false;
     clearRecordTimers();
+    stopMeter();
     resetRecordBtn();
     const msgs = {
       'not-allowed':   '请在浏览器设置中允许麦克风权限后重试',
@@ -691,6 +1147,7 @@ function spawnRec(btn, status) {
 function stopRecording() {
   recordingActive = false;          // onend will see this and finalize
   clearRecordTimers();
+  stopMeter();
   if (recognition) {
     try { recognition.stop(); } catch (_) {}
     // Do NOT null callbacks here — onend must fire to show the result
@@ -753,6 +1210,12 @@ function showResult(userText) {
   // Persist score
   const sentenceIdx = transcript.indexOf(shadowTarget);
   if (sentenceIdx >= 0) saveScore(sentenceIdx, score);
+
+  // Celebrate high scores
+  if (score >= 80) fireConfetti();
+
+  // Auto-advance countdown
+  startAutoAdvance();
 }
 
 /* ── Speed control ── */
@@ -765,7 +1228,53 @@ function setSpeed(rate) {
 
 /* ── DOM ready ── */
 document.addEventListener('DOMContentLoaded', () => {
-  // Side drawer tab buttons
+
+  // ── Page init: start on home ──
+  showHome();
+
+  // ── Home page: URL input ──
+  const homeInput = document.getElementById('homeUrlInput');
+  const homeBtn   = document.getElementById('homeLoadBtn');
+  if (homeBtn)   homeBtn.addEventListener('click',  () => loadFromUrl(homeInput?.value.trim()));
+  if (homeInput) homeInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') loadFromUrl(homeInput.value.trim());
+  });
+
+  // ── Home page: category tabs ──
+  document.getElementById('catTabs')?.addEventListener('click', e => {
+    const tab = e.target.closest('.cat-tab');
+    if (!tab) return;
+    activeCat = tab.dataset.cat;
+    document.querySelectorAll('.cat-tab').forEach(t =>
+      t.classList.toggle('active', t === tab));
+    renderHomeGrid();
+  });
+
+  // ── Home page: featured grid click ──
+  document.getElementById('featuredGrid')?.addEventListener('click', e => {
+    const card = e.target.closest('.feat-card');
+    if (card) loadFromUrl(card.dataset.url);
+  });
+
+  // ── Home page: recent grid click ──
+  document.getElementById('recentGrid')?.addEventListener('click', e => {
+    const card = e.target.closest('.feat-card');
+    if (card) loadFromUrl(card.dataset.url);
+  });
+
+  // ── Home page: fav home grid click ──
+  document.getElementById('favHomeGrid')?.addEventListener('click', e => {
+    const card = e.target.closest('.feat-card');
+    if (card) loadFromUrl(card.dataset.url);
+  });
+
+  // ── Home page: clear recent ──
+  document.getElementById('clearRecentBtn')?.addEventListener('click', clearRecent);
+
+  // ── Player: back button ──
+  document.getElementById('backBtn').addEventListener('click', showHome);
+
+  // ── Side drawer tab buttons ──
   document.querySelectorAll('.side-tab').forEach(btn => {
     btn.addEventListener('click', () => toggleSidePanel(btn.dataset.panel));
   });
@@ -776,17 +1285,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Backdrop closes all panels
   document.getElementById('drawerBackdrop')?.addEventListener('click', () => {
     if (activePanel) closeSidePanel(activePanel);
-  });
-
-  // Click on featured video cards
-  document.getElementById('featuredList')?.addEventListener('click', e => {
-    const card = e.target.closest('[data-feat-idx]');
-    if (!card) return;
-    const v = FEATURED_VIDEOS[+card.dataset.featIdx];
-    if (!v) return;
-    document.getElementById('videoUrl').value = v.url;
-    closeSidePanel('featured');
-    loadVideo();
   });
 
   // Click on favorites cards / remove buttons
@@ -850,9 +1348,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Load button
-  document.getElementById('loadBtn').addEventListener('click', loadVideo);
-  document.getElementById('videoUrl').addEventListener('keydown', e => {
+  // Load button (hidden in player, but kept for compatibility)
+  document.getElementById('loadBtn')?.addEventListener('click', loadVideo);
+  document.getElementById('videoUrl')?.addEventListener('keydown', e => {
     if (e.key === 'Enter') loadVideo();
   });
 
@@ -861,14 +1359,98 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('listenAgainBtn').addEventListener('click', listenAgain);
   document.getElementById('recordBtn').addEventListener('click', toggleRecord);
   document.getElementById('retryBtn').addEventListener('click', () => {
+    cancelAutoAdvance();
     document.getElementById('resultBox').classList.add('hidden');
     document.getElementById('recordStatus').textContent = '';
   });
+  document.getElementById('nextBtn').addEventListener('click', () => {
+    cancelAutoAdvance();
+    goNextSentence();
+  });
+  document.getElementById('cancelAdvance').addEventListener('click', cancelAutoAdvance);
+
+  // Loop control buttons
+  document.querySelectorAll('.loop-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      loopCount = +btn.dataset.loops;
+      document.querySelectorAll('.loop-btn').forEach(b => b.classList.toggle('active', b === btn));
+    });
+  });
+
+  // Search input (optional — element removed from player page)
+  const searchInput = document.getElementById('searchInput');
+  const searchClear = document.getElementById('searchClear');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      searchClear?.classList.toggle('hidden', !searchInput.value);
+      applyFilters();
+    });
+  }
+  if (searchClear) {
+    searchClear.addEventListener('click', () => {
+      if (searchInput) { searchInput.value = ''; }
+      searchClear.classList.add('hidden');
+      applyFilters();
+      searchInput?.focus();
+    });
+  }
 
   // Close modal on backdrop tap
   document.getElementById('shadowModal').addEventListener('click', e => {
     if (e.target.id === 'shadowModal') closeShadow();
   });
+
+  // TTS: click a word in the modal to hear its pronunciation
+  document.getElementById('modalEnglish').addEventListener('click', e => {
+    const word = e.target.closest('.tts-word');
+    if (word) speakWord(word.textContent, word);
+  });
+
+  // Filter chips
+  document.getElementById('filterChips')?.addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    activeFilterChip = chip.dataset.filter;
+    document.querySelectorAll('.chip').forEach(c =>
+      c.classList.toggle('active', c === chip));
+    applyFilters();
+  });
+
+  // Modal prev / next navigation buttons
+  document.getElementById('prevSentenceBtn').addEventListener('click', () => {
+    const idx = transcript.indexOf(shadowTarget);
+    if (idx > 0) { cancelAutoAdvance(); openShadow(idx - 1); }
+  });
+  document.getElementById('nextSentenceNavBtn').addEventListener('click', () => {
+    const idx = transcript.indexOf(shadowTarget);
+    if (idx < transcript.length - 1) { cancelAutoAdvance(); openShadow(idx + 1); }
+  });
+
+  // Modal keyboard shortcuts
+  document.addEventListener('keydown', e => {
+    const modalOpen = document.getElementById('shadowModal').classList.contains('open');
+    if (!modalOpen) return;
+    if (e.key === 'Escape') { e.preventDefault(); closeShadow(); return; }
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggleRecord(); }
+    if (e.key === 'r' || e.key === 'R')     { e.preventDefault(); listenAgain(); }
+    if (e.key === 'ArrowRight' || e.key === 'n') {
+      e.preventDefault(); cancelAutoAdvance(); goNextSentence();
+    }
+    if (e.key === 'ArrowLeft' || e.key === 'p') {
+      e.preventDefault();
+      const prevIdx = transcript.indexOf(shadowTarget) - 1;
+      if (prevIdx >= 0) { cancelAutoAdvance(); openShadow(prevIdx); }
+    }
+  });
+
+  // Restore last watched URL into home input
+  const lastUrl = loadLastUrl();
+  if (lastUrl) {
+    const homeIn = document.getElementById('homeUrlInput');
+    if (homeIn) homeIn.value = lastUrl;
+    document.getElementById('videoUrl').value = lastUrl;
+  }
 
   // Tab switching (UI only; subtitles tab is the functional one)
   document.querySelectorAll('.tab').forEach(tab => {
