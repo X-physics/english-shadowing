@@ -97,6 +97,15 @@ def translate_texts(texts, source='en', target='zh-CN'):
         results = [''] * len(texts)
         batch_indices, batch_parts, batch_chars = [], [], 0
 
+        def translate_one(text):
+            try:
+                return GoogleTranslator(source=source, target=target).translate(text) or ''
+            except Exception:
+                try:
+                    return GoogleTranslator(source='auto', target=target).translate(text) or ''
+                except Exception:
+                    return ''
+
         def flush_batch(indices, parts):
             if not indices:
                 return
@@ -107,7 +116,8 @@ def translate_texts(texts, source='en', target='zh-CN'):
                 for k, idx in enumerate(indices):
                     results[idx] = chunks[k].strip() if k < len(chunks) else ''
             except Exception:
-                pass
+                for offset, idx in enumerate(indices):
+                    results[idx] = translate_one(parts[offset])
 
         for i, text in enumerate(texts):
             if batch_chars + len(text) > MAX_CHARS and batch_indices:
@@ -118,6 +128,11 @@ def translate_texts(texts, source='en', target='zh-CN'):
             batch_chars += len(text) + len(SEPARATOR)
 
         flush_batch(batch_indices, batch_parts)
+
+        for i, text in enumerate(texts):
+            if results[i].strip():
+                continue
+            results[i] = translate_one(text)
         return results
     except ImportError:
         return [''] * len(texts)
