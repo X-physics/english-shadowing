@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, send_from_directory
 import re
 import os
+from urllib.parse import quote
 
 app = Flask(__name__, static_folder='static')
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -276,6 +277,24 @@ def get_youtube_title(video_id):
         return video_id
 
 
+def _get_youtube_title_invidious(video_id):
+    """Fetch title from an Invidious instance as a fallback."""
+    try:
+        import requests as req
+        for base_url in _get_invidious_instances():
+            try:
+                resp = req.get(f'{base_url}/api/v1/videos/{video_id}', timeout=8)
+                if resp.ok:
+                    title = (resp.json() or {}).get('title', '').strip()
+                    if title:
+                        return title
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return video_id
+
+
 # ── YouTube transcript fetcher ────────────────────────────────────────────────
 
 def _get_yt_transcript_scraperapi(video_id, api_key):
@@ -394,6 +413,173 @@ def _get_yt_transcript_scraperapi(video_id, api_key):
     return segments
 
 
+def _get_invidious_instances():
+    """Return candidate Invidious base URLs.
+
+    Priority:
+      1. INVIDIOUS_INSTANCES env var (comma-separated)
+      2. Official public instances API
+      3. Small built-in fallback list
+    """
+    manual = [
+        item.strip().rstrip('/')
+        for item in os.environ.get('INVIDIOUS_INSTANCES', '').split(',')
+        if item.strip()
+    ]
+    if manual:
+        return manual
+
+    fallback = [
+        'https://yewtu.be',
+        'https://inv.nadeko.net',
+        'https://invidious.nerdvpn.de',
+    ]
+
+    try:
+        import requests as req
+        resp = req.get('https://api.invidious.io/instances.json', timeout=8)
+        resp.raise_for_status()
+        data = resp.json()
+        instances = []
+        for row in data:
+            if not isinstance(row, list) or len(row) < 2:
+                continue
+            host, meta = row[0], row[1] or {}
+            if not meta.get('api', False):
+                continue
+            if not meta.get('monitor', {}).get('up', True):
+                continue
+            uri = (meta.get('uri') or '').strip().rstrip('/')
+            if uri.startswith('https://'):
+                instances.append(uri)
+            elif host:
+                instances.append(f'https://{host}')
+        if instances:
+            deduped = []
+            seen = set()
+            for url in instances + fallback:
+                if url not in seen:
+                    seen.add(url)
+                    deduped.append(url)
+            return deduped
+    except Exception:
+        pass
+
+    return fallback
+
+
+def _parse_vtt_timestamp(ts):
+    parts = ts.strip().split(':')
+    if len(parts) == 3:
+        hours, minutes, seconds = parts
+    elif len(parts) == 2:
+        hours = '0'
+        minutes, seconds = parts
+    else:
+        raise ValueError(f'无效时间戳: {ts}')
+    return int(hours) * 3600 + int(minutes) * 60 + float(seconds.replace(',', '.'))
+
+
+def _parse_vtt_captions(vtt_text):
+    """Parse WebVTT into transcript segments."""
+    segments = []
+    block = []
+
+    def flush(lines):
+        if not lines:
+            return
+        cue_idx = 0
+        if '-->' not in lines[0] and len(lines) > 1:
+            cue_idx = 1
+        if cue_idx >= len(lines) or '-->' not in lines[cue_idx]:
+            return
+        timing = lines[cue_idx]
+        text_lines = lines[cue_idx + 1:]
+        text = ' '.join(text_lines).strip()
+        text = re.sub(r'<[^>]+>', '', text)
+        text = re.sub(r'\s+', ' ', text).strip()
+        if not text:
+            return
+        start_raw, end_raw = [part.strip() for part in timing.split('-->', 1)]
+        end_raw = end_raw.split(' ')[0].strip()
+        start = _parse_vtt_timestamp(start_raw)
+        end = _parse_vtt_timestamp(end_raw)
+        segments.append({
+            'text': text,
+            'start': start,
+            'duration': max(end - start, 0.5),
+        })
+
+    for raw_line in vtt_text.splitlines():
+        line = raw_line.strip('\ufeff').rstrip()
+        if not line.strip():
+            flush(block)
+            block = []
+            continue
+        if line.startswith('WEBVTT') or line.startswith('Kind:') or line.startswith('Language:'):
+            continue
+        block.append(line.strip())
+    flush(block)
+
+    if not segments:
+        raise Exception('字幕内容为空')
+    return segments
+
+
+def _get_yt_transcript_invidious(video_id):
+    """Fetch captions from public Invidious instances."""
+    import requests as req
+
+    errors = []
+    for base_url in _get_invidious_instances()[:8]:
+        try:
+            tracks_resp = req.get(f'{base_url}/api/v1/captions/{video_id}', timeout=10)
+            if not tracks_resp.ok:
+                errors.append(f'{base_url}: HTTP {tracks_resp.status_code}')
+                continue
+            tracks = (tracks_resp.json() or {}).get('captions', [])
+            if not tracks:
+                errors.append(f'{base_url}: 无字幕轨道')
+                continue
+
+            chosen = None
+            for lang in ('en', 'en-US', 'en-GB'):
+                chosen = next((t for t in tracks if t.get('languageCode') == lang), None)
+                if chosen:
+                    break
+            if not chosen:
+                chosen = next(
+                    (t for t in tracks if t.get('languageCode', '').startswith('en')),
+                    tracks[0]
+                )
+
+            query = ''
+            language_code = chosen.get('languageCode', '').strip()
+            label = chosen.get('label', '').strip()
+            if language_code:
+                query = f'lang={quote(language_code)}'
+            elif label:
+                query = f'label={quote(label)}'
+            else:
+                errors.append(f'{base_url}: 字幕轨道缺少语言信息')
+                continue
+
+            caption_resp = req.get(
+                f'{base_url}/api/v1/captions/{video_id}?{query}',
+                timeout=12,
+            )
+            if not caption_resp.ok or not caption_resp.text.strip():
+                errors.append(f'{base_url}: 字幕文件下载失败')
+                continue
+
+            return _parse_vtt_captions(caption_resp.text)
+        except Exception as e:
+            errors.append(f'{base_url}: {str(e)}')
+
+    preview = '; '.join(errors[:3])
+    raise Exception(f'Invidious 字幕兜底失败{f"（{preview}）" if preview else ""}')
+
+
 def _fetch_yt_raw(video_id):
     """Return raw transcript segments for a YouTube video.
 
@@ -429,13 +615,18 @@ def _fetch_yt_raw(video_id):
     try:
         raw = api.fetch(video_id, languages=['en', 'en-US', 'en-GB'])
     except NoTranscriptFound:
-        transcript_list = api.list(video_id)
         try:
-            raw = transcript_list.find_generated_transcript(['en']).fetch()
+            transcript_list = api.list(video_id)
+            try:
+                raw = transcript_list.find_generated_transcript(['en']).fetch()
+            except Exception:
+                raw = next(iter(transcript_list)).fetch()
         except Exception:
-            raw = next(iter(transcript_list)).fetch()
+            return _get_yt_transcript_invidious(video_id)
     except TranscriptsDisabled:
         raise Exception('该视频未开启字幕功能')
+    except Exception:
+        return _get_yt_transcript_invidious(video_id)
 
     return [{'text': s.text, 'start': s.start, 'duration': s.duration} for s in raw]
 
@@ -515,10 +706,14 @@ def get_transcript():
             }
             for i, item in enumerate(merged)
         ]
+        title = get_youtube_title(video_id)
+        if not title or title == video_id:
+            title = _get_youtube_title_invidious(video_id)
+
         return jsonify({
             'platform': 'youtube',
             'video_id': video_id,
-            'title': get_youtube_title(video_id),
+            'title': title,
             'source_lang': 'en',
             'transcript': result,
         })
