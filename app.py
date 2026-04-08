@@ -390,10 +390,14 @@ def _get_yt_transcript_scraperapi(video_id, api_key):
             r = sa_rest(caption_url, autoparse='false', render='false')
             if r.text.strip():
                 events = r.json().get('events', [])
+            else:
+                errors.append('ScraperAPI REST: 返回空响应')
         except Exception as e:
             errors.append(f'ScraperAPI REST: {e}')
 
     if events is None:
+        if not errors:
+            errors.append('未拿到任何字幕响应')
         raise Exception(f'字幕文件获取失败（{"; ".join(errors)}）')
 
     # ── 5. Build segments ─────────────────────────────────────────────────────
@@ -594,7 +598,10 @@ def _fetch_yt_raw(video_id):
     # ── Option 1: ScraperAPI REST (recommended for Railway) ──────────────────
     scraper_key = os.environ.get('SCRAPERAPI_KEY', '').strip()
     if scraper_key:
-        return _get_yt_transcript_scraperapi(video_id, scraper_key)
+        try:
+            return _get_yt_transcript_scraperapi(video_id, scraper_key)
+        except Exception:
+            pass
 
     # ── Option 2: Webshare residential proxy ─────────────────────────────────
     proxy_user = os.environ.get('WEBSHARE_PROXY_USERNAME', '').strip()
