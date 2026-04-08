@@ -80,6 +80,10 @@ function toggleFav() {
 /* ══════════════════════════════════════════
    PAGE NAVIGATION (Home ↔ Player)
    ══════════════════════════════════════════ */
+function isMobileLayout() {
+  return window.matchMedia('(max-width: 768px)').matches;
+}
+
 function showHome() {
   // Pause video before leaving player page
   clearSegmentTimer();
@@ -111,12 +115,17 @@ function showPlayer() {
   document.getElementById('homePage').classList.add('hidden');
   document.getElementById('playerPage').classList.remove('hidden');
   document.getElementById('app').className = 'app player-mode';
-  document.body.style.overflow = 'hidden';
+  document.body.style.overflow = isMobileLayout() ? '' : 'hidden';
   // Sync topbar title if video already loaded
   if (currentVideoMeta?.title) {
     const t = document.getElementById('topbarTitle');
     if (t) t.textContent = currentVideoMeta.title;
   }
+}
+
+function syncViewportMode() {
+  const playerVisible = !document.getElementById('playerPage')?.classList.contains('hidden');
+  document.body.style.overflow = (playerVisible && !isMobileLayout()) ? 'hidden' : '';
 }
 
 /* ── Side Drawer ── */
@@ -250,12 +259,14 @@ function updateLibrarySummary() {
 function renderHomeGrid() {
   const grid = document.getElementById('featuredGrid');
   if (!grid) return;
+  const baseList = FEATURED_VIDEOS.filter(v => v.cached);
+  const effectiveBase = baseList.length ? baseList : FEATURED_VIDEOS;
   const list = activeCat === 'all'
-    ? FEATURED_VIDEOS
-    : FEATURED_VIDEOS.filter(v => v.cat === activeCat);
+    ? effectiveBase
+    : effectiveBase.filter(v => v.cat === activeCat);
   grid.innerHTML = list.length
     ? list.map(makeFeatCard).join('')
-    : '<div class="feat-empty">该分类暂无视频，敬请期待 ✨</div>';
+    : '<div class="feat-empty">该分类下暂时还没有已缓存视频，稍后再来看看 ✨</div>';
 }
 
 function renderRecentSection() {
@@ -1213,6 +1224,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── Page init: start on home ──
   showHome();
+  window.addEventListener('resize', syncViewportMode);
 
   // ── Home page: URL input ──
   const homeInput = document.getElementById('homeUrlInput');
