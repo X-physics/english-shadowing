@@ -150,25 +150,15 @@ def normalize_lang_code(lang):
     return lower
 
 
-def detect_text_lang(texts):
+def is_english_text(texts):
     sample = ' '.join((texts or [])[:8]).strip()
     if not sample:
-        return ''
+        return False
 
-    counts = {
-        'ar': len(re.findall(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]', sample)),
-        'zh': len(re.findall(r'[\u4E00-\u9FFF]', sample)),
-        'ja': len(re.findall(r'[\u3040-\u30FF]', sample)),
-        'ko': len(re.findall(r'[\uAC00-\uD7AF]', sample)),
-        'latin': len(re.findall(r'[A-Za-z]', sample)),
-    }
-
-    strongest = max(counts, key=counts.get)
-    if counts[strongest] == 0:
-        return ''
-    if strongest == 'latin':
-        return 'en'
-    return strongest
+    latin_count = len(re.findall(r'[A-Za-z]', sample))
+    arabic_count = len(re.findall(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]', sample))
+    cjk_count = len(re.findall(r'[\u4E00-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]', sample))
+    return latin_count > max(arabic_count, cjk_count) and latin_count >= 20
 
 
 # ── Bilibili WBI signature ────────────────────────────────────────────────────
@@ -814,25 +804,14 @@ def get_transcript():
             return jsonify({'error': '字幕内容为空'}), 400
 
         raw_texts = [item['text'] for item in merged]
-        detected_lang = detect_text_lang(raw_texts)
         effective_lang = normalize_lang_code(source_lang)
-        if detected_lang and detected_lang != effective_lang:
-            effective_lang = detected_lang
+        if effective_lang != 'en' or not is_english_text(raw_texts):
+            return jsonify({
+                'error': '该视频当前未获取到英文字幕，请换一个带英文字幕的视频'
+            }), 400
 
-        if effective_lang == 'en':
-            english_texts = raw_texts
-            chinese_texts = translate_texts(raw_texts, source='en', target='zh-CN')
-        elif effective_lang == 'zh':
-            english_texts = translate_texts(raw_texts, source='zh-CN', target='en')
-            chinese_texts = raw_texts
-        else:
-            english_texts = translate_texts(raw_texts, source=effective_lang or 'auto', target='en')
-            chinese_texts = translate_texts(raw_texts, source=effective_lang or 'auto', target='zh-CN')
-
-        if not any((text or '').strip() for text in english_texts):
-            english_texts = raw_texts
-        if not any((text or '').strip() for text in chinese_texts):
-            chinese_texts = [''] * len(raw_texts)
+        english_texts = raw_texts
+        chinese_texts = translate_texts(raw_texts, source='en', target='zh-CN')
 
         result = [
             {
@@ -851,7 +830,7 @@ def get_transcript():
             'platform': 'youtube',
             'video_id': video_id,
             'title': title,
-            'source_lang': effective_lang or normalize_lang_code(source_lang) or 'en',
+            'source_lang': 'en',
             'transcript': result,
         })
 
