@@ -123,6 +123,18 @@ def translate_texts(texts, source='en', target='zh-CN'):
         return [''] * len(texts)
 
 
+def normalize_lang_code(lang):
+    value = (lang or '').strip()
+    if not value:
+        return ''
+    lower = value.lower()
+    if lower.startswith('zh'):
+        return 'zh'
+    if lower.startswith('en'):
+        return 'en'
+    return lower
+
+
 # ── Bilibili WBI signature ────────────────────────────────────────────────────
 # Bilibili's newer API endpoints require a signed "w_rid" parameter.
 # Reference: https://socialsisteryi.github.io/bilibili-API-collect/docs/misc/sign/wbi.html
@@ -620,6 +632,8 @@ def _get_yt_transcript_transcriptapi(video_id, api_key):
     raw = payload.get('transcript', [])
     if not raw:
         raise Exception('TranscriptAPI 返回的字幕内容为空')
+    source_lang = normalize_lang_code(payload.get('language', ''))
+    video_title = ((payload.get('metadata') or {}).get('title') or '').strip()
 
     segments = []
     for item in raw:
@@ -636,7 +650,7 @@ def _get_yt_transcript_transcriptapi(video_id, api_key):
 
     if not segments:
         raise Exception('TranscriptAPI 返回的字幕内容为空')
-    return segments
+    return segments, source_lang, video_title
 
 
 def _fetch_yt_raw(video_id):
@@ -654,13 +668,14 @@ def _fetch_yt_raw(video_id):
     # ── Option 1: TranscriptAPI (recommended for public cloud deployment) ───
     transcriptapi_key = os.environ.get('TRANSCRIPTAPI_KEY', '').strip()
     if transcriptapi_key:
-        return _get_yt_transcript_transcriptapi(video_id, transcriptapi_key)
+        segments, source_lang, video_title = _get_yt_transcript_transcriptapi(video_id, transcriptapi_key)
+        return segments, source_lang or 'en', video_title
 
     # ── Option 2: ScraperAPI REST ────────────────────────────────────────────
     scraper_key = os.environ.get('SCRAPERAPI_KEY', '').strip()
     if scraper_key:
         try:
-            return _get_yt_transcript_scraperapi(video_id, scraper_key)
+            return _get_yt_transcript_scraperapi(video_id, scraper_key), 'en', ''
         except Exception:
             pass
 
@@ -690,13 +705,13 @@ def _fetch_yt_raw(video_id):
             except Exception:
                 raw = next(iter(transcript_list)).fetch()
         except Exception:
-            return _get_yt_transcript_invidious(video_id)
+            return _get_yt_transcript_invidious(video_id), 'en', ''
     except TranscriptsDisabled:
         raise Exception('该视频未开启字幕功能')
     except Exception:
-        return _get_yt_transcript_invidious(video_id)
+        return _get_yt_transcript_invidious(video_id), 'en', ''
 
-    return [{'text': s.text, 'start': s.start, 'duration': s.duration} for s in raw]
+    return [{'text': s.text, 'start': s.start, 'duration': s.duration} for s in raw], 'en', ''
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -757,24 +772,32 @@ def get_transcript():
         return jsonify({'error': '无法识别视频链接，请粘贴 YouTube 或 Bilibili 视频链接'}), 400
 
     try:
-        raw_list = _fetch_yt_raw(video_id)
+        raw_list, source_lang, api_title = _fetch_yt_raw(video_id)
         merged = merge_segments(raw_list)
         if not merged:
             return jsonify({'error': '字幕内容为空'}), 400
 
-        english_texts = [item['text'] for item in merged]
-        chinese_texts = translate_texts(english_texts, source='en', target='zh-CN')
+        raw_texts = [item['text'] for item in merged]
+        if normalize_lang_code(source_lang) == 'en':
+            english_texts = raw_texts
+            chinese_texts = translate_texts(raw_texts, source='en', target='zh-CN')
+        elif normalize_lang_code(source_lang) == 'zh':
+            english_texts = translate_texts(raw_texts, source='zh-CN', target='en')
+            chinese_texts = raw_texts
+        else:
+            english_texts = translate_texts(raw_texts, source='auto', target='en')
+            chinese_texts = translate_texts(raw_texts, source='auto', target='zh-CN')
 
         result = [
             {
                 'start': round(item['start'], 2),
                 'duration': round(item['duration'], 2),
-                'english': item['text'],
+                'english': english_texts[i],
                 'chinese': chinese_texts[i],
             }
             for i, item in enumerate(merged)
         ]
-        title = get_youtube_title(video_id)
+        title = api_title or get_youtube_title(video_id)
         if not title or title == video_id:
             title = _get_youtube_title_invidious(video_id)
 
@@ -782,7 +805,7 @@ def get_transcript():
             'platform': 'youtube',
             'video_id': video_id,
             'title': title,
-            'source_lang': 'en',
+            'source_lang': normalize_lang_code(source_lang) or 'en',
             'transcript': result,
         })
 
