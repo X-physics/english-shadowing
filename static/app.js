@@ -149,15 +149,9 @@ function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 /* ── Featured Videos (expanded, categorized) ── */
 const FEATURED_VIDEOS = [
   // TED演讲
-  { url: 'https://www.youtube.com/watch?v=HluANRwPyNo',
+  { url: 'https://www.youtube.com/watch?v=iG9CE55wbtY',
     title: '学校扼杀了创造力吗？',
-    author: 'Sir Ken Robinson · TED2006', cat: 'ted' },
-  { url: 'https://www.youtube.com/watch?v=arj7oStGLkU',
-    title: '拖延症患者的内心世界',
-    author: 'Tim Urban · TED2016', cat: 'ted' },
-  { url: 'https://www.youtube.com/watch?v=8mwavUop1XE',
-    title: '内向者的力量',
-    author: 'Susan Cain · TED2012', cat: 'ted' },
+    author: 'Sir Ken Robinson · TED', cat: 'ted' },
   { url: 'https://www.youtube.com/watch?v=iCvmsMzlF7o',
     title: '脆弱的力量',
     author: 'Brené Brown · TEDxHouston', cat: 'ted' },
@@ -167,6 +161,18 @@ const FEATURED_VIDEOS = [
   { url: 'https://www.youtube.com/watch?v=ReRcHdeUG9Y',
     title: '如何拥有更好的对话',
     author: 'Celeste Headlee · TEDxCreativeCoast', cat: 'ted' },
+  { url: 'https://www.youtube.com/watch?v=Ks-_Mh1QhMc',
+    title: '你的肢体语言会塑造你是谁',
+    author: 'Amy Cuddy · TED', cat: 'ted' },
+  { url: 'https://www.youtube.com/watch?v=eIho2S0ZahI',
+    title: '如何说话让别人愿意听',
+    author: 'Julian Treasure · TED', cat: 'ted' },
+  { url: 'https://www.youtube.com/watch?v=fLJsdqxnZb0',
+    title: '更好工作的快乐秘诀',
+    author: 'Shawn Achor · TED', cat: 'ted' },
+  { url: 'https://www.youtube.com/watch?v=rrkrvAUbU9Y',
+    title: '动机之谜',
+    author: 'Dan Pink · TED', cat: 'ted' },
 
   // 英语学习
   { url: 'https://www.youtube.com/watch?v=8S0FDjFBj8o',
@@ -186,12 +192,11 @@ const FEATURED_VIDEOS = [
   { url: 'https://www.youtube.com/watch?v=lmyZMtPVodo',
     title: '如何与压力做朋友',
     author: 'Kelly McGonigal · TED', cat: 'life' },
+  { url: 'https://www.youtube.com/watch?v=8jPQjjsBbIc',
+    title: '当你知道压力要来时，如何保持冷静',
+    author: 'Daniel Levitin · TED', cat: 'life' },
 
   // 旅行
-  { url: 'https://www.youtube.com/watch?v=kN2vXCMmUBo',
-    title: '旅行能教给你的那些事',
-    author: 'Rick Steves · TED', cat: 'travel' },
-
   // 商务
   { url: 'https://www.youtube.com/watch?v=Unzc731iCUY',
     title: '如何与人交谈：职场沟通技巧',
