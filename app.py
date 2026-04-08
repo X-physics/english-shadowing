@@ -584,18 +584,79 @@ def _get_yt_transcript_invidious(video_id):
     raise Exception(f'Invidious 字幕兜底失败{f"（{preview}）" if preview else ""}')
 
 
+def _get_yt_transcript_transcriptapi(video_id, api_key):
+    """Fetch transcript from TranscriptAPI."""
+    import requests as req
+
+    resp = req.get(
+        'https://transcriptapi.com/api/v2/youtube/transcript',
+        params={
+            'video_url': f'https://www.youtube.com/watch?v={video_id}',
+        },
+        headers={
+            'Authorization': f'Bearer {api_key}',
+            'Accept': 'application/json',
+        },
+        timeout=20,
+    )
+
+    if resp.status_code == 401:
+        raise Exception('TranscriptAPI 认证失败，请检查 TRANSCRIPTAPI_KEY')
+    if resp.status_code == 402:
+        raise Exception('TranscriptAPI credits 已用完，请充值或更换账号')
+    if resp.status_code == 404:
+        raise Exception('该视频没有可用字幕')
+    if resp.status_code in (408, 429, 503):
+        raise Exception(f'TranscriptAPI 临时不可用（HTTP {resp.status_code}）')
+    if not resp.ok:
+        try:
+            payload = resp.json()
+            detail = payload.get('error') or payload.get('message') or resp.text.strip()
+        except Exception:
+            detail = resp.text.strip()
+        raise Exception(f'TranscriptAPI 请求失败（HTTP {resp.status_code}: {detail or "未知错误"}）')
+
+    payload = resp.json() or {}
+    raw = payload.get('transcript', [])
+    if not raw:
+        raise Exception('TranscriptAPI 返回的字幕内容为空')
+
+    segments = []
+    for item in raw:
+        text = str(item.get('text', '')).strip()
+        if not text:
+            continue
+        start = float(item.get('start', 0) or 0)
+        duration = float(item.get('duration', 0) or 0)
+        segments.append({
+            'text': text,
+            'start': start,
+            'duration': max(duration, 0.5),
+        })
+
+    if not segments:
+        raise Exception('TranscriptAPI 返回的字幕内容为空')
+    return segments
+
+
 def _fetch_yt_raw(video_id):
     """Return raw transcript segments for a YouTube video.
 
     Priority:
-      1. ScraperAPI REST API  – set SCRAPERAPI_KEY env var
-      2. Webshare proxy       – set WEBSHARE_PROXY_USERNAME + WEBSHARE_PROXY_PASSWORD
-      3. No proxy             – local dev / clean-IP host
+      1. TranscriptAPI        – set TRANSCRIPTAPI_KEY env var
+      2. ScraperAPI REST API  – set SCRAPERAPI_KEY env var
+      3. Webshare proxy       – set WEBSHARE_PROXY_USERNAME + WEBSHARE_PROXY_PASSWORD
+      4. No proxy             – local dev / clean-IP host
     """
     from youtube_transcript_api import YouTubeTranscriptApi
     from youtube_transcript_api._errors import NoTranscriptFound, TranscriptsDisabled
 
-    # ── Option 1: ScraperAPI REST (recommended for Railway) ──────────────────
+    # ── Option 1: TranscriptAPI (recommended for public cloud deployment) ───
+    transcriptapi_key = os.environ.get('TRANSCRIPTAPI_KEY', '').strip()
+    if transcriptapi_key:
+        return _get_yt_transcript_transcriptapi(video_id, transcriptapi_key)
+
+    # ── Option 2: ScraperAPI REST ────────────────────────────────────────────
     scraper_key = os.environ.get('SCRAPERAPI_KEY', '').strip()
     if scraper_key:
         try:
@@ -603,7 +664,7 @@ def _fetch_yt_raw(video_id):
         except Exception:
             pass
 
-    # ── Option 2: Webshare residential proxy ─────────────────────────────────
+    # ── Option 3: Webshare residential proxy ─────────────────────────────────
     proxy_user = os.environ.get('WEBSHARE_PROXY_USERNAME', '').strip()
     proxy_pass = os.environ.get('WEBSHARE_PROXY_PASSWORD', '').strip()
     if proxy_user and proxy_pass:
@@ -616,7 +677,7 @@ def _fetch_yt_raw(video_id):
         except Exception:
             api = YouTubeTranscriptApi()
     else:
-        # ── Option 3: No proxy ────────────────────────────────────────────────
+        # ── Option 4: No proxy ────────────────────────────────────────────────
         api = YouTubeTranscriptApi()
 
     try:
