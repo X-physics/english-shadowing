@@ -7,6 +7,7 @@ from urllib.parse import quote
 app = Flask(__name__, static_folder='static')
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(BASE_DIR, 'cache', 'transcripts')
+FEATURED_VIDEOS_PATH = os.path.join(BASE_DIR, 'featured_videos.json')
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 
@@ -62,6 +63,29 @@ def save_cached_transcript(platform, video_id, payload):
     with open(tmp_path, 'w', encoding='utf-8') as f:
         json.dump(payload, f, ensure_ascii=False)
     os.replace(tmp_path, path)
+
+
+def load_featured_videos():
+    try:
+        with open(FEATURED_VIDEOS_PATH, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def build_library_items():
+    items = []
+    for item in load_featured_videos():
+        video_id = extract_youtube_id(item.get('url', '')) or extract_bilibili_id(item.get('url', ''))
+        platform = 'bilibili' if extract_bilibili_id(item.get('url', '')) else 'youtube'
+        cached = bool(video_id and load_cached_transcript(platform, video_id))
+        items.append({
+            **item,
+            'platform': platform,
+            'video_id': video_id,
+            'cached': cached,
+        })
+    return items
 
 
 # ── Sentence helpers ──────────────────────────────────────────────────────────
@@ -772,6 +796,94 @@ def _fetch_yt_raw(video_id):
 @app.route('/')
 def index():
     return send_from_directory(BASE_DIR, 'index.html')
+
+
+@app.route('/api/library')
+def get_library():
+    items = build_library_items()
+    cached_count = sum(1 for item in items if item.get('cached'))
+    return jsonify({
+        'items': items,
+        'summary': {
+            'total': len(items),
+            'cached': cached_count,
+        }
+    })
+
+
+@app.route('/api/library/precache', methods=['POST'])
+def precache_library():
+    items = build_library_items()
+    refreshed = []
+    errors = []
+
+    for item in items:
+        video_id = item.get('video_id')
+        url = item.get('url', '')
+        platform = item.get('platform')
+        if not video_id or not url:
+            continue
+        if load_cached_transcript(platform, video_id):
+            refreshed.append({'video_id': video_id, 'status': 'cached'})
+            continue
+        try:
+            if platform == 'bilibili':
+                segments, source_lang, video_title = get_bilibili_transcript(video_id)
+                merged = merge_segments(segments)
+                raw_texts = [entry['text'] for entry in merged]
+                if source_lang == 'zh':
+                    english_texts = translate_texts(raw_texts, source='zh-CN', target='en')
+                    chinese_texts = raw_texts
+                else:
+                    english_texts = raw_texts
+                    chinese_texts = translate_texts(raw_texts, source='en', target='zh-CN')
+                payload = {
+                    'platform': 'bilibili',
+                    'video_id': video_id,
+                    'title': video_title,
+                    'source_lang': source_lang,
+                    'transcript': [
+                        {
+                            'start': round(entry['start'], 2),
+                            'duration': round(entry['duration'], 2),
+                            'english': english_texts[idx],
+                            'chinese': chinese_texts[idx],
+                        }
+                        for idx, entry in enumerate(merged)
+                    ],
+                }
+            else:
+                raw_list, source_lang, api_title = _fetch_yt_raw(video_id)
+                merged = merge_segments(raw_list)
+                raw_texts = [entry['text'] for entry in merged]
+                effective_lang = normalize_lang_code(source_lang)
+                if effective_lang != 'en' or not is_english_text(raw_texts):
+                    raise Exception('未获取到英文字幕')
+                payload = {
+                    'platform': 'youtube',
+                    'video_id': video_id,
+                    'title': api_title or get_youtube_title(video_id),
+                    'source_lang': 'en',
+                    'transcript': [
+                        {
+                            'start': round(entry['start'], 2),
+                            'duration': round(entry['duration'], 2),
+                            'english': entry['text'],
+                            'chinese': translate_texts([entry['text']], source='en', target='zh-CN')[0],
+                        }
+                        for entry in merged
+                    ],
+                }
+            save_cached_transcript(platform, video_id, payload)
+            refreshed.append({'video_id': video_id, 'status': 'cached'})
+        except Exception as e:
+            errors.append({'video_id': video_id, 'title': item.get('title'), 'error': str(e)})
+
+    return jsonify({
+        'ok': len(errors) == 0,
+        'cached': refreshed,
+        'errors': errors,
+    })
 
 
 @app.route('/api/transcript')
