@@ -1,10 +1,13 @@
 from flask import Flask, request, jsonify, send_from_directory
 import re
 import os
+import json
 from urllib.parse import quote
 
 app = Flask(__name__, static_folder='static')
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CACHE_DIR = os.path.join(BASE_DIR, 'cache', 'transcripts')
+os.makedirs(CACHE_DIR, exist_ok=True)
 
 
 # ── URL parsers ──────────────────────────────────────────────────────────────
@@ -35,6 +38,30 @@ def extract_bilibili_id(url):
         if match:
             return match.group(1)
     return None
+
+
+def _cache_path(platform, video_id):
+    safe_video_id = re.sub(r'[^a-zA-Z0-9_-]', '_', video_id)
+    return os.path.join(CACHE_DIR, f'{platform}_{safe_video_id}.json')
+
+
+def load_cached_transcript(platform, video_id):
+    path = _cache_path(platform, video_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def save_cached_transcript(platform, video_id, payload):
+    path = _cache_path(platform, video_id)
+    tmp_path = path + '.tmp'
+    with open(tmp_path, 'w', encoding='utf-8') as f:
+        json.dump(payload, f, ensure_ascii=False)
+    os.replace(tmp_path, path)
 
 
 # ── Sentence helpers ──────────────────────────────────────────────────────────
@@ -756,6 +783,9 @@ def get_transcript():
     # ── Bilibili ──────────────────────────────────────────
     bvid = extract_bilibili_id(url)
     if bvid:
+        cached = load_cached_transcript('bilibili', bvid)
+        if cached:
+            return jsonify(cached)
         try:
             segments, source_lang, video_title = get_bilibili_transcript(bvid)
             merged = merge_segments(segments)
@@ -782,13 +812,15 @@ def get_transcript():
                 }
                 for i, item in enumerate(merged)
             ]
-            return jsonify({
+            payload = {
                 'platform': 'bilibili',
                 'video_id': bvid,
                 'title': video_title,
                 'source_lang': source_lang,
                 'transcript': result,
-            })
+            }
+            save_cached_transcript('bilibili', bvid, payload)
+            return jsonify(payload)
         except Exception as e:
             return jsonify({'error': f'获取字幕失败：{str(e)}'}), 500
 
@@ -796,6 +828,10 @@ def get_transcript():
     video_id = extract_youtube_id(url)
     if not video_id:
         return jsonify({'error': '无法识别视频链接，请粘贴 YouTube 或 Bilibili 视频链接'}), 400
+
+    cached = load_cached_transcript('youtube', video_id)
+    if cached:
+        return jsonify(cached)
 
     try:
         raw_list, source_lang, api_title = _fetch_yt_raw(video_id)
@@ -826,13 +862,15 @@ def get_transcript():
         if not title or title == video_id:
             title = _get_youtube_title_invidious(video_id)
 
-        return jsonify({
+        payload = {
             'platform': 'youtube',
             'video_id': video_id,
             'title': title,
             'source_lang': 'en',
             'transcript': result,
-        })
+        }
+        save_cached_transcript('youtube', video_id, payload)
+        return jsonify(payload)
 
     except Exception as e:
         return jsonify({'error': f'获取字幕失败：{str(e)}'}), 500

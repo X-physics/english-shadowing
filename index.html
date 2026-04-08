@@ -27,18 +27,23 @@
         <h1 class="hero-title">语镜</h1>
         <p class="hero-sub">英语沉浸式跟读练习</p>
         <div class="hero-badges">
+          <span class="hero-badge">✅ 精选库优先</span>
+          <span class="hero-badge">💾 成功解析自动缓存</span>
           <span class="hero-badge">🎬 中英双语字幕</span>
           <span class="hero-badge">🎤 AI 实时评分</span>
           <span class="hero-badge">🔁 单句精听跟读</span>
           <span class="hero-badge">📱 支持 YouTube & Bilibili</span>
         </div>
+        <p class="hero-note">
+          推荐优先使用已验证英文字幕的精选视频。成功解析过的视频会自动缓存，后续打开更稳定也更省 API 次数。
+        </p>
         <div class="hero-input-row">
           <input id="homeUrlInput" class="hero-input" type="url"
                  placeholder="粘贴 YouTube 或 Bilibili 链接…"
                  autocomplete="off" spellcheck="false" />
           <button id="homeLoadBtn" class="hero-btn">开始练习 →</button>
         </div>
-        <p class="hero-hint">↓ 或在下方选择精选视频</p>
+        <p class="hero-hint">↓ 优先从下方“已验证英文字幕”的精选视频开始</p>
       </div>
     </section>
 
@@ -46,6 +51,7 @@
     <section class="home-section">
       <div class="section-header">
         <h2 class="section-heading">精选视频库</h2>
+        <span class="section-caption">已验证英文字幕</span>
       </div>
       <!-- 分类标签 -->
       <div class="cat-tabs" id="catTabs">
@@ -171,10 +177,10 @@
         <div id="subtitlesPanel" class="subtitles-panel">
           <div id="sentencesList" class="sentences-list">
             <div class="empty-state">
-              <div class="empty-icon">🎧</div>
-              <p>粘贴一个 YouTube 链接</p>
+            <div class="empty-icon">🎧</div>
+              <p>从精选视频开始更稳定</p>
               <p style="font-weight:400;color:var(--label-3);font-size:14px;margin-top:2px">
-                开始你的英语跟读之旅</p>
+                也可以手动粘贴链接尝试解析</p>
               <p class="hint">自动获取字幕 · 中英双语对照<br>逐句跟读 · AI 评分反馈</p>
             </div>
           </div>

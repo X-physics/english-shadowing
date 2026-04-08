@@ -151,64 +151,64 @@ const FEATURED_VIDEOS = [
   // TED演讲
   { url: 'https://www.youtube.com/watch?v=iG9CE55wbtY',
     title: '学校扼杀了创造力吗？',
-    author: 'Sir Ken Robinson · TED', cat: 'ted' },
+    author: 'Sir Ken Robinson · TED', cat: 'ted', level: '进阶' },
   { url: 'https://www.youtube.com/watch?v=iCvmsMzlF7o',
     title: '脆弱的力量',
-    author: 'Brené Brown · TEDxHouston', cat: 'ted' },
+    author: 'Brené Brown · TEDxHouston', cat: 'ted', level: '进阶' },
   { url: 'https://www.youtube.com/watch?v=qp0HIF3SfI4',
     title: '伟大领袖如何激励行动',
-    author: 'Simon Sinek · TEDxPugetSound', cat: 'ted' },
+    author: 'Simon Sinek · TEDxPugetSound', cat: 'ted', level: '进阶' },
   { url: 'https://www.youtube.com/watch?v=ReRcHdeUG9Y',
     title: '如何拥有更好的对话',
-    author: 'Celeste Headlee · TEDxCreativeCoast', cat: 'ted' },
+    author: 'Celeste Headlee · TEDxCreativeCoast', cat: 'ted', level: '进阶' },
   { url: 'https://www.youtube.com/watch?v=Ks-_Mh1QhMc',
     title: '你的肢体语言会塑造你是谁',
-    author: 'Amy Cuddy · TED', cat: 'ted' },
+    author: 'Amy Cuddy · TED', cat: 'ted', level: '中级' },
   { url: 'https://www.youtube.com/watch?v=eIho2S0ZahI',
     title: '如何说话让别人愿意听',
-    author: 'Julian Treasure · TED', cat: 'ted' },
+    author: 'Julian Treasure · TED', cat: 'ted', level: '中级' },
   { url: 'https://www.youtube.com/watch?v=fLJsdqxnZb0',
     title: '更好工作的快乐秘诀',
-    author: 'Shawn Achor · TED', cat: 'ted' },
+    author: 'Shawn Achor · TED', cat: 'ted', level: '中级' },
   { url: 'https://www.youtube.com/watch?v=rrkrvAUbU9Y',
     title: '动机之谜',
-    author: 'Dan Pink · TED', cat: 'ted' },
+    author: 'Dan Pink · TED', cat: 'ted', level: '中级' },
 
   // 英语学习
   { url: 'https://www.youtube.com/watch?v=8S0FDjFBj8o',
     title: '6 Minute English',
-    author: 'BBC Learning English', cat: 'learn' },
+    author: 'BBC Learning English', cat: 'learn', level: '入门' },
   { url: 'https://www.youtube.com/watch?v=o-Bcl93OnU0',
     title: 'English Conversation Practice',
-    author: 'Learn English with TV Series', cat: 'learn' },
+    author: 'Learn English with TV Series', cat: 'learn', level: '入门' },
   { url: 'https://www.youtube.com/watch?v=LeqjcafMu9o',
     title: 'English Listening & Speaking',
-    author: 'EnglishClass101', cat: 'learn' },
+    author: 'EnglishClass101', cat: 'learn', level: '入门' },
 
   // 生活
   { url: 'https://www.youtube.com/watch?v=H14bBuluwB8',
     title: '睡眠的科学：为什么好好睡觉这么重要',
-    author: 'Matt Walker · TED', cat: 'life' },
+    author: 'Matt Walker · TED', cat: 'life', level: '中级' },
   { url: 'https://www.youtube.com/watch?v=lmyZMtPVodo',
     title: '如何与压力做朋友',
-    author: 'Kelly McGonigal · TED', cat: 'life' },
+    author: 'Kelly McGonigal · TED', cat: 'life', level: '中级' },
   { url: 'https://www.youtube.com/watch?v=8jPQjjsBbIc',
     title: '当你知道压力要来时，如何保持冷静',
-    author: 'Daniel Levitin · TED', cat: 'life' },
+    author: 'Daniel Levitin · TED', cat: 'life', level: '中级' },
 
   // 旅行
   // 商务
   { url: 'https://www.youtube.com/watch?v=Unzc731iCUY',
     title: '如何与人交谈：职场沟通技巧',
-    author: 'MIT OpenCourseWare', cat: 'biz' },
+    author: 'MIT OpenCourseWare', cat: 'biz', level: '进阶' },
 
   // 科技
   { url: 'https://www.youtube.com/watch?v=UF8uR6Z6KLc',
     title: '乔布斯斯坦福演讲：Stay Hungry, Stay Foolish',
-    author: 'Steve Jobs · Stanford 2005', cat: 'sci' },
+    author: 'Steve Jobs · Stanford 2005', cat: 'sci', level: '中级' },
   { url: 'https://www.youtube.com/watch?v=W3I3kAg2J7w',
     title: '互联网如何改变了世界',
-    author: 'Andrew Blum · TED', cat: 'sci' },
+    author: 'Andrew Blum · TED', cat: 'sci', level: '进阶' },
 ];
 
 /* ── Category config ── */
@@ -246,6 +246,9 @@ function makeFeatCard(v) {
     ? `<span class="feat-cat-badge" style="background:${cfg.color}">${cfg.label}</span>`
     : '';
   const src = (v.platform === 'bilibili') ? '📺 Bilibili' : '▶️ YouTube';
+  const metaPill = v.level
+    ? `<span class="feat-level">${esc(v.level)}</span>`
+    : '';
   return `
     <div class="feat-card" data-url="${esc(v.url)}">
       <div class="feat-thumb-wrap">
@@ -261,7 +264,10 @@ function makeFeatCard(v) {
         <div class="feat-title">${esc(v.title)}</div>
         <div class="feat-meta">
           <span class="feat-author">${esc(v.author || '')}</span>
-          <span class="feat-source">${src}</span>
+          <div class="feat-meta-right">
+            ${metaPill}
+            <span class="feat-source">${src}</span>
+          </div>
         </div>
       </div>
     </div>`;
