@@ -111,11 +111,14 @@ function showHome() {
   });
 }
 
-function showPlayer() {
+function showPlayer(pushHistory = false) {
   document.getElementById('homePage').classList.add('hidden');
   document.getElementById('playerPage').classList.remove('hidden');
   document.getElementById('app').className = 'app player-mode';
   document.body.style.overflow = isMobileLayout() ? '' : 'hidden';
+  if (pushHistory) {
+    history.pushState({ page: 'player' }, '', '#study');
+  }
   // Sync topbar title if video already loaded
   if (currentVideoMeta?.title) {
     const t = document.getElementById('topbarTitle');
@@ -293,7 +296,7 @@ function renderFavHomeSection() {
 function loadFromUrl(url) {
   if (!url) return;
   document.getElementById('videoUrl').value = url;
-  showPlayer();
+  showPlayer(true);
   loadVideo();
 }
 
@@ -1223,8 +1226,16 @@ function setSpeed(rate) {
 document.addEventListener('DOMContentLoaded', () => {
 
   // ── Page init: start on home ──
+  history.replaceState({ page: 'home' }, '', location.pathname);
   showHome();
   window.addEventListener('resize', syncViewportMode);
+  window.addEventListener('popstate', e => {
+    if (e.state?.page === 'player') {
+      showPlayer(false);
+    } else {
+      showHome();
+    }
+  });
 
   // ── Home page: URL input ──
   const homeInput = document.getElementById('homeUrlInput');
@@ -1266,7 +1277,10 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('clearRecentBtn')?.addEventListener('click', clearRecent);
 
   // ── Player: back button ──
-  document.getElementById('backBtn').addEventListener('click', showHome);
+  document.getElementById('backBtn').addEventListener('click', () => {
+    if (history.state?.page === 'player') history.back();
+    else showHome();
+  });
 
   // ── Side drawer tab buttons ──
   document.querySelectorAll('.side-tab').forEach(btn => {
